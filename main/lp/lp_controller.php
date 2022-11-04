@@ -48,7 +48,11 @@ $(window).on("load", function () {
     setFocus();
 });
 </script>';
-$ajax_url = api_get_path(WEB_AJAX_PATH).'lp.ajax.php?'.api_get_cidreq();
+$extraParams = '';
+if (isset($_REQUEST['lti_launch_id'])) {
+    $extraParams .= '&lti_launch_id='.Security::remove_XSS($_REQUEST['lti_launch_id']);
+}
+$ajax_url = api_get_path(WEB_AJAX_PATH).'lp.ajax.php?'.api_get_cidreq().$extraParams;
 $htmlHeadXtra[] = '
 <script>
     /*
@@ -428,6 +432,11 @@ $is_allowed_to_edit = api_is_allowed_to_edit(false, true, false, false);
 if (isset($_SESSION['oLP'])) {
     // Reinitialises array used by javascript to update items in the TOC.
     $_SESSION['oLP']->update_queue = [];
+    // We check if a tool provider
+    if (isset($_REQUEST['lti_launch_id'])) {
+        $ltiLaunchId = Security::remove_XSS($_REQUEST['lti_launch_id']);
+        $_SESSION['oLP']->lti_launch_id = $ltiLaunchId;
+    }
 }
 
 $action = !empty($_REQUEST['action']) ? $_REQUEST['action'] : '';
@@ -1242,6 +1251,11 @@ switch ($action) {
             $form = new FormValidator('form1');
             $form->addSelect('skills', 'skills');
             Skill::saveSkills($form, ITEM_TYPE_LEARNPATH, $_SESSION['oLP']->get_id());
+
+            // It saves the next learnpath id
+            if (isset($_REQUEST['next_lp_id']) && true === api_get_configuration_value('lp_enable_flow')) {
+                learnpath::saveTheNextLp($_SESSION['oLP']->lp_id, $_REQUEST['next_lp_id']);
+            }
 
             if (api_get_setting('search_enabled') === 'true') {
                 require_once api_get_path(LIBRARY_PATH).'specific_fields_manager.lib.php';

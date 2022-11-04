@@ -28,7 +28,7 @@ use Symfony\Component\HttpFoundation\Session\Session;
  */
 class ChamiloSession extends System\Session
 {
-    const NAME = 'ch_sid';
+    public const NAME = 'ch_sid';
 
     /**
      * Generate new session instance.
@@ -86,6 +86,17 @@ class ChamiloSession extends System\Session
         //ini_set('session.cookie_secure', 1);
         //session ID in the cookie is only readable by the server
         ini_set('session.cookie_httponly', 1);
+
+        if (api_get_configuration_value('security_session_cookie_samesite_none')) {
+            if (PHP_VERSION_ID < 70300) {
+                $sessionCookieParams = session_get_cookie_params();
+                session_set_cookie_params($sessionCookieParams['lifetime'], '/; samesite=None',
+                $sessionCookieParams['domain'], true, $sessionCookieParams['httponly']);
+            } else {
+                ini_set('session.cookie_secure', 1);
+                ini_set('session.cookie_samesite', 'None');
+            }
+        }
 
         //Use entropy file
         //session.entropy_file

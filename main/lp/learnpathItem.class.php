@@ -1750,8 +1750,10 @@ class learnpathItem
         if (!Tracking::minimumTimeAvailable(api_get_session_id(), api_get_course_int_id())) {
             $fixedAddedMinute = 5 * 60; // Add only 5 minutes
             if ($time > $sessionLifetime) {
-                error_log("fixAbusiveTime: Total time is too big: $time replaced with: $fixedAddedMinute");
-                error_log("item_id : ".$this->db_id." lp_item_view.iid: ".$this->db_item_view_id);
+                if (api_get_setting('server_type') === 'test') {
+                    error_log("fixAbusiveTime: Total time is too big: $time replaced with: $fixedAddedMinute");
+                    error_log("item_id : ".$this->db_id." lp_item_view.iid: ".$this->db_item_view_id);
+                }
                 $time = $fixedAddedMinute;
             }
 
@@ -2342,6 +2344,13 @@ class learnpathItem
                                         $status = $itemToCheck->get_status(true);
                                         $returnstatus = $status == $this->possible_status[2] || $status == $this->possible_status[3];
 
+                                        // Allow learnpath prerequisite on quiz to unblock if maximum attempt is reached
+                                        if (true === api_get_configuration_value('lp_prerequisit_on_quiz_unblock_if_max_attempt_reached')) {
+                                            $isQuizMaxAttemptReached = $this->isQuizMaxAttemptReached($items[$refs_list[$prereqs_string]]->path, $user_id, $courseId, $this->lp_id, $prereqs_string);
+                                            if ($isQuizMaxAttemptReached) {
+                                                $returnstatus = true;
+                                            }
+                                        }
                                         if (!$returnstatus) {
                                             $explanation = sprintf(
                                                 get_lang('ItemXBlocksThisElement'),
@@ -2354,6 +2363,8 @@ class learnpathItem
                                         if ($this->prevent_reinit == 1) {
                                             // 2. If is completed we check the results in the DB of the quiz.
                                             if ($returnstatus) {
+                                                $checkLastScoreAttempt = api_get_configuration_value('lp_prerequisite_use_last_attempt_only');
+                                                $orderBy = ($checkLastScoreAttempt ? 'ORDER BY exe_date DESC' : 'ORDER BY (exe_result/exe_weighting) DESC');
                                                 $sql = 'SELECT exe_result, exe_weighting
                                                         FROM '.Database::get_main_table(TABLE_STATISTIC_TRACK_E_EXERCISES).'
                                                         WHERE
@@ -2363,7 +2374,7 @@ class learnpathItem
                                                             orig_lp_item_id = '.$prereqs_string.' AND
                                                             status <> "incomplete" AND
                                                             c_id = '.$courseId.'
-                                                        ORDER BY exe_date DESC
+                                                        '.$orderBy.'
                                                         LIMIT 0, 1';
                                                 $rs_quiz = Database::query($sql);
                                                 if ($quiz = Database::fetch_array($rs_quiz)) {
@@ -2433,7 +2444,6 @@ class learnpathItem
                                                             $minScore = $masteryScoreAsMin;
                                                         }
                                                     }
-
                                                     if (isset($minScore) && isset($minScore)) {
                                                         // Taking min/max prerequisites values see BT#5776
                                                         if ($quiz['exe_result'] >= $minScore &&
@@ -2476,6 +2486,13 @@ class learnpathItem
                                                     $prereqs_string,
                                                     $refs_list
                                                 );
+                                            }
+                                            // Allow learnpath prerequisite on quiz to unblock if maximum attempt is reached
+                                            if (true === api_get_configuration_value('lp_prerequisit_on_quiz_unblock_if_max_attempt_reached')) {
+                                                $isQuizMaxAttemptReached = $this->isQuizMaxAttemptReached($items[$refs_list[$prereqs_string]]->path, $user_id, $courseId, $this->lp_id, $prereqs_string);
+                                                if ($isQuizMaxAttemptReached) {
+                                                    $returnstatus = true;
+                                                }
                                             }
                                         }
 
@@ -2632,6 +2649,36 @@ class learnpathItem
         }
 
         return false;
+    }
+
+    /**
+     * Check if max quiz attempt is reached.
+     *
+     * @param $exerciseId
+     * @param $userId
+     * @param $courseId
+     * @param $lpId
+     * @param $lpItemId
+     *
+     * @return bool
+     */
+    public function isQuizMaxAttemptReached($exerciseId, $userId, $courseId, $lpId, $lpItemId)
+    {
+        $objExercise = new Exercise();
+        $objExercise->read($exerciseId);
+        $nbAttempts = $objExercise->selectAttempts();
+        $countAttempts = Tracking::count_student_exercise_attempts(
+            $userId,
+            $courseId,
+            $exerciseId,
+            $lpId,
+            $lpItemId,
+            api_get_session_id()
+        );
+
+        $isMaxAttemptReached = ($nbAttempts > 0 && $countAttempts >= $nbAttempts);
+
+        return $isMaxAttemptReached;
     }
 
     /**
@@ -4066,6 +4113,11 @@ class learnpathItem
                     }
                 }
             }
+        }
+
+        // It updates the last progress only in case.
+        if (is_object($_SESSION['oLP'])) {
+            $_SESSION['oLP']->updateLpProgress();
         }
 
         if ($debug) {

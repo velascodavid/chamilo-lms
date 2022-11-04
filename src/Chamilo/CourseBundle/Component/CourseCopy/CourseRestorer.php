@@ -40,6 +40,7 @@ class CourseRestorer
     public $file_option;
     public $set_tools_invisible_by_default;
     public $skip_content;
+    // Restoration is done in the order listed for $tools_to_restore
     public $tools_to_restore = [
         'documents', // first restore documents
         'announcements',
@@ -54,6 +55,7 @@ class CourseRestorer
         'test_category',
         'links',
         'works',
+        'xapi_tool',
         'surveys',
         'learnpath_category',
         'learnpaths',
@@ -67,6 +69,7 @@ class CourseRestorer
 
     /** Setting per tool */
     public $tool_copy_settings = [];
+    public $isXapiEnabled = false;
 
     /**
      * If true adds the text "copy" in the title of an item (only for LPs right now).
@@ -153,6 +156,7 @@ class CourseRestorer
         // Getting first teacher (for the forums)
         $teacher_list = CourseManager::get_teacher_list_from_course_code($course_info['code']);
         $this->first_teacher_id = api_get_user_id();
+        $this->isXapiEnabled = \XApiPlugin::create()->isEnabled();
 
         if (!empty($teacher_list)) {
             foreach ($teacher_list as $teacher) {
@@ -189,6 +193,9 @@ class CourseRestorer
         $this->course->to_system_encoding();
 
         foreach ($this->tools_to_restore as $tool) {
+            if ('xapi_tool' == $tool && !$this->isXapiEnabled) {
+                continue;
+            }
             $function_build = 'restore_'.$tool;
             $this->$function_build(
                 $session_id,
@@ -403,6 +410,11 @@ class CourseRestorer
                 $dir_to_create = dirname($document->path);
                 $originalFolderNameList[basename($document->path)] = $document->title;
                 if (!empty($dir_to_create) && $dir_to_create != 'document' && $dir_to_create != '/') {
+                    // it creates folder images if it doesn't exist , used for hotspot pictures.
+                    if (false !== strpos($document->path, '/images/') && !is_dir(dirname($path.$document->path))) {
+                        $perm = api_get_permissions_for_new_directories();
+                        mkdir(dirname($path.$document->path), $perm, true);
+                    }
                     if (is_dir($path.dirname($document->path))) {
                         $sql = "SELECT id FROM $table
                                 WHERE
@@ -411,13 +423,9 @@ class CourseRestorer
                         $res = Database::query($sql);
 
                         if (Database::num_rows($res) == 0) {
-                            //continue;
-                            $visibility = $document->item_properties[0]['visibility'];
                             $new = '/'.substr(dirname($document->path), 9);
-                            $title = $document->title;
-                            if (empty($title)) {
-                                $title = str_replace('/', '', $new);
-                            }
+                            // It adds the folder name as title
+                            $title = str_replace('/', '', $new);
 
                             // This code fixes the possibility for a file without a directory entry to be
                             $document_id = add_document(
@@ -899,6 +907,7 @@ class CourseRestorer
                     } // end switch
                 } else {
                     // end if file exists
+
                     //make sure the source file actually exists
                     if (is_file($this->course->backup_path.'/'.$document->path) &&
                         is_readable($this->course->backup_path.'/'.$document->path) &&
@@ -1382,10 +1391,7 @@ class CourseRestorer
                 [$max_order] = Database::fetch_array($result);
 
                 $params = [];
-                if (!empty($session_id)) {
-                    $params['session_id'] = $session_id;
-                }
-
+                $params['session_id'] = (int) $session_id;
                 $params['c_id'] = $this->destination_course_id;
                 $params['url'] = self::DBUTF8($link->url);
                 $params['title'] = self::DBUTF8($link->title);
@@ -1842,7 +1848,7 @@ class CourseRestorer
             // Check if the "id" column still exists
             $idColumn = true;
             $columns = Database::listTableColumns($table_qui);
-            if (!in_array('id', $columns)) {
+            if (!in_array('id', array_keys($columns))) {
                 $idColumn = false;
             }
 
@@ -1940,7 +1946,7 @@ class CourseRestorer
                         Database::query($sql);
                     }
                 } else {
-                    // $id = -1 identifies the fictionary test for collecting
+                    // $id = -1 identifies the fictional test for collecting
                     // orphan questions. We do not store it in the database.
                     $new_id = -1;
                 }
@@ -2026,10 +2032,15 @@ class CourseRestorer
 
             $new_id = Database::insert($table_que, $params);
 
-            if ($new_id && $idColumn) {
-                $sql = "UPDATE $table_que SET id = iid WHERE iid = $new_id";
-                Database::query($sql);
+            if ($new_id) {
+                // If the ID column is still present, update it, otherwise just
+                // continue
+                if ($idColumn) {
+                    $sql = "UPDATE $table_que SET id = iid WHERE iid = $new_id";
+                    Database::query($sql);
+                }
             } else {
+                // If no IID was generated, stop right there and return 0
                 return 0;
             }
 
@@ -2159,93 +2170,139 @@ class CourseRestorer
 
             // Moving quiz_question_options
             if ($question->quiz_type == MULTIPLE_ANSWER_TRUE_FALSE) {
-                $question_option_list = Question::readQuestionOption($id, $course_id);
-
-                // Question copied from the current platform
-                if ($question_option_list) {
-                    $old_option_ids = [];
-                    foreach ($question_option_list as $item) {
-                        if (isset($item['iid'])) {
-                            $old_id = $item['iid'];
-                            unset($item['iid']);
-                            unset($item['id']);
-                        } else {
-                            $old_id = $item['id'];
-                            unset($item['id']);
-                        }
-                        $item['question_id'] = $new_id;
-                        $item['c_id'] = $this->destination_course_id;
-                        $question_option_id = Database::insert($table_options, $item);
-                        if ($question_option_id && $idColumn) {
-                            $old_option_ids[$old_id] = $question_option_id;
-                            $sql = "UPDATE $table_options SET id = iid WHERE iid = $question_option_id";
-                            Database::query($sql);
-                        }
-                    }
-                    if ($old_option_ids) {
-                        $new_answers = Database::select(
-                            'iid, correct',
-                            $table_ans,
-                            [
-                                'WHERE' => [
-                                    'question_id = ? AND c_id = ? ' => [
-                                        $new_id,
-                                        $this->destination_course_id,
-                                    ],
-                                ],
-                            ]
+                if (count($question->question_options) < 3) {
+                    $options = [1 => 'True', 2 => 'False', 3 => 'DoubtScore'];
+                    $correct = [];
+                    for ($i = 1; $i <= 3; $i++) {
+                        $lastId = Question::saveQuestionOption(
+                            $new_id,
+                            $options[$i],
+                            $this->destination_course_id,
+                            $i
                         );
+                        $correct[$i] = $lastId;
+                    }
 
-                        foreach ($new_answers as $answer_item) {
-                            $params = [];
-                            $params['correct'] = $old_option_ids[$answer_item['correct']];
-                            Database::update(
-                                $table_ans,
-                                $params,
-                                [
-                                    'iid = ? AND c_id = ? AND question_id = ? ' => [
-                                        $answer_item['iid'],
-                                        $this->destination_course_id,
-                                        $new_id,
-                                    ],
+                    $correctAnswerValues = Database::select(
+                        'DISTINCT(correct)',
+                        $table_ans,
+                        [
+                            'WHERE' => [
+                                'question_id = ? AND c_id = ? ' => [
+                                    $new_id,
+                                    $this->destination_course_id,
                                 ],
-                                false
-                            );
-                        }
+                            ],
+                            'ORDER' => 'correct ASC',
+                        ]
+                    );
+                    $i = 1;
+                    foreach ($correctAnswerValues as $correctAnswer) {
+                        $params = [];
+                        $params['correct'] = $correct[$i];
+                        Database::update(
+                            $table_ans,
+                            $params,
+                            [
+                                'question_id = ? AND c_id = ? AND correct = ? ' => [
+                                    $new_id,
+                                    $this->destination_course_id,
+                                    $correctAnswer['correct'],
+                                ],
+                            ],
+                            false
+                        );
+                        $i++;
                     }
                 } else {
-                    $new_options = [];
-                    if (isset($question->question_options)) {
-                        foreach ($question->question_options as $obj) {
-                            $item = [];
+                    $question_option_list = Question::readQuestionOption($id, $course_id);
+
+                    // Question copied from the current platform
+                    if ($question_option_list) {
+                        $old_option_ids = [];
+                        foreach ($question_option_list as $item) {
+                            if (isset($item['iid'])) {
+                                $old_id = $item['iid'];
+                                unset($item['iid']);
+                                unset($item['id']);
+                            } else {
+                                $old_id = $item['id'];
+                                unset($item['id']);
+                            }
                             $item['question_id'] = $new_id;
                             $item['c_id'] = $this->destination_course_id;
-                            $item['name'] = $obj->obj->name;
-                            $item['position'] = $obj->obj->position;
                             $question_option_id = Database::insert($table_options, $item);
-
-                            if ($question_option_id) {
-                                $new_options[$obj->obj->id] = $question_option_id;
+                            if ($question_option_id && $idColumn) {
+                                $old_option_ids[$old_id] = $question_option_id;
                                 $sql = "UPDATE $table_options SET id = iid WHERE iid = $question_option_id";
                                 Database::query($sql);
                             }
                         }
-
-                        foreach ($correctAnswers as $answer_id => $correct_answer) {
-                            $params = [];
-                            $params['correct'] = isset($new_options[$correct_answer]) ? $new_options[$correct_answer] : '';
-                            Database::update(
+                        if ($old_option_ids) {
+                            $new_answers = Database::select(
+                                'iid, correct',
                                 $table_ans,
-                                $params,
                                 [
-                                    'iid = ? AND c_id = ? AND question_id = ? ' => [
-                                        $answer_id,
-                                        $this->destination_course_id,
-                                        $new_id,
+                                    'WHERE' => [
+                                        'question_id = ? AND c_id = ? ' => [
+                                            $new_id,
+                                            $this->destination_course_id,
+                                        ],
                                     ],
-                                ],
-                                false
+                                ]
                             );
+
+                            foreach ($new_answers as $answer_item) {
+                                $params = [];
+                                $params['correct'] = $old_option_ids[$answer_item['correct']];
+                                Database::update(
+                                    $table_ans,
+                                    $params,
+                                    [
+                                        'iid = ? AND c_id = ? AND question_id = ? ' => [
+                                            $answer_item['iid'],
+                                            $this->destination_course_id,
+                                            $new_id,
+                                        ],
+                                    ],
+                                    false
+                                );
+                            }
+                        }
+                    } else {
+                        $new_options = [];
+                        if (isset($question->question_options)) {
+                            foreach ($question->question_options as $obj) {
+                                $item = [];
+                                $item['question_id'] = $new_id;
+                                $item['c_id'] = $this->destination_course_id;
+                                $item['name'] = $obj->obj->name;
+                                $item['position'] = $obj->obj->position;
+                                $question_option_id = Database::insert($table_options, $item);
+
+                                if ($question_option_id) {
+                                    $new_options[$obj->obj->id] = $question_option_id;
+                                    $sql = "UPDATE $table_options SET id = iid WHERE iid = $question_option_id";
+                                    Database::query($sql);
+                                }
+                            }
+
+                            foreach ($correctAnswers as $answer_id => $correct_answer) {
+                                $params = [];
+                                $params['correct'] = isset($new_options[$correct_answer]) ? $new_options[$correct_answer] : '';
+                                Database::update(
+                                    $table_ans,
+                                    $params,
+                                    [
+                                        'iid = ? AND c_id = ? AND question_id = ? ' => [
+                                            $answer_id,
+                                            $this->destination_course_id,
+                                            $new_id,
+                                        ],
+                                    ],
+                                    false
+                                );
+                            }
                         }
                     }
                 }
@@ -3127,7 +3184,7 @@ class CourseRestorer
                         if (!is_dir($dest.'/'.$file)) {
                             mkdir($dest.'/'.$file);
                         }
-                        self:: allow_create_all_directory($path, $dest.'/'.$file, $overwrite);
+                        self::allow_create_all_directory($path, $dest.'/'.$file, $overwrite);
                     }
                 }
             }
@@ -3152,6 +3209,10 @@ class CourseRestorer
 
         if ($tool === 'student_publication') {
             $tool = RESOURCE_WORK;
+        }
+
+        if ('xapi' === $tool && $this->isXapiEnabled) {
+            $tool = RESOURCE_XAPI_TOOL;
         }
 
         if (isset($this->course->resources[$tool][$ref]) &&
@@ -3305,6 +3366,43 @@ class CourseRestorer
                     ];
 
                     Database::insert($table_wiki_conf, $params);
+                }
+            }
+        }
+    }
+
+    /**
+     * Restore xapi tool.
+     *
+     * @param int $sessionId
+     */
+    public function restore_xapi_tool()
+    {
+        if ($this->course->has_resources(RESOURCE_XAPI_TOOL) && $this->isXapiEnabled) {
+            $resources = $this->course->resources;
+            foreach ($resources[RESOURCE_XAPI_TOOL] as $id => $xapiTool) {
+                $launchPath = str_replace(
+                    api_get_path(WEB_COURSE_PATH).$this->course->info['path'].'/',
+                    '',
+                    dirname($xapiTool->params['launch_url'])
+                );
+
+                $originPath = $this->course->backup_path.'/'.$launchPath;
+                $destinationPath = api_get_path(SYS_COURSE_PATH).$this->course->destination_path.'/'.$launchPath;
+                $xapiDir = dirname($destinationPath);
+                @mkdir($xapiDir, api_get_permissions_for_new_directories(), true);
+                if (copyDirTo($originPath, $destinationPath, false)) {
+                    $xapiTool->params['launch_url'] = str_replace(
+                        '/'.$this->course->info['path'].'/',
+                        '/'.$this->course->destination_path.'/',
+                        $xapiTool->params['launch_url']
+                    );
+                    $ref = $xapiTool->params['id'];
+                    $xapiTool->params['c_id'] = $this->destination_course_id;
+                    unset($xapiTool->params['id']);
+
+                    $lastId = Database::insert('xapi_tool_launch', $xapiTool->params, false);
+                    $this->course->resources[RESOURCE_XAPI_TOOL][$ref]->destination_id = $lastId;
                 }
             }
         }
@@ -3602,7 +3700,7 @@ class CourseRestorer
             $resources = $this->course->resources;
             $destinationCourseCode = $this->destination_course_info['code'];
             // Delete destination gradebook
-            $cats = \Category:: load(
+            $cats = \Category::load(
                 null,
                 null,
                 $destinationCourseCode,

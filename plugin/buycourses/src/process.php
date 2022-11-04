@@ -21,8 +21,10 @@ $paypalEnabled = $plugin->get('paypal_enable') === 'true';
 $transferEnabled = $plugin->get('transfer_enable') === 'true';
 $culqiEnabled = $plugin->get('culqi_enable') === 'true';
 $tpvRedsysEnable = $plugin->get('tpv_redsys_enable') === 'true';
+$stripeEnable = $plugin->get('stripe_enable') === 'true';
+$tpvCecabankEnable = $plugin->get('cecabank_enable') === 'true';
 
-if (!$paypalEnabled && !$transferEnabled && !$culqiEnabled && !$tpvRedsysEnable) {
+if (!$paypalEnabled && !$transferEnabled && !$culqiEnabled && !$tpvRedsysEnable && !$stripeEnable && !$tpvCecabankEnable) {
     api_not_allowed(true);
 }
 
@@ -30,9 +32,12 @@ if (!isset($_REQUEST['t'], $_REQUEST['i'])) {
     api_not_allowed(true);
 }
 
+$currency = $plugin->getSelectedCurrency();
 $buyingCourse = intval($_REQUEST['t']) === BuyCoursesPlugin::PRODUCT_TYPE_COURSE;
 $buyingSession = intval($_REQUEST['t']) === BuyCoursesPlugin::PRODUCT_TYPE_SESSION;
 $queryString = 'i='.intval($_REQUEST['i']).'&t='.intval($_REQUEST['t']);
+
+$coupon = null;
 
 if (isset($_REQUEST['c'])) {
     $couponCode = $_REQUEST['c'];
@@ -88,23 +93,7 @@ if ($form->validate()) {
     exit;
 }
 
-$paymentTypesOptions = $plugin->getPaymentTypes();
-
-if (!$paypalEnabled) {
-    unset($paymentTypesOptions[BuyCoursesPlugin::PAYMENT_TYPE_PAYPAL]);
-}
-
-if (!$transferEnabled) {
-    unset($paymentTypesOptions[BuyCoursesPlugin::PAYMENT_TYPE_TRANSFER]);
-}
-
-if (!$culqiEnabled) {
-    unset($paymentTypesOptions[BuyCoursesPlugin::PAYMENT_TYPE_CULQI]);
-}
-
-if (!$tpvRedsysEnable || !file_exists(api_get_path(SYS_PLUGIN_PATH).'buycourses/resources/apiRedsys.php')) {
-    unset($paymentTypesOptions[BuyCoursesPlugin::PAYMENT_TYPE_TPV_REDSYS]);
-}
+$paymentTypesOptions = $plugin->getPaymentTypes(true);
 
 $count = count($paymentTypesOptions);
 if ($count === 0) {
@@ -129,8 +118,8 @@ if ($count === 0) {
     $form->addRadio('payment_type', null, $paymentTypesOptions);
 }
 
-$form->addHidden('t', intval($_GET['t']));
-$form->addHidden('i', intval($_GET['i']));
+$form->addHidden('t', intval($_REQUEST['t']));
+$form->addHidden('i', intval($_REQUEST['i']));
 if ($coupon != null) {
     $form->addHidden('c', intval($coupon['id']));
 }

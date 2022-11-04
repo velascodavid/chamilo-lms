@@ -7,6 +7,7 @@ use Chamilo\CoreBundle\Entity\Repository\AccessUrlRepository;
 use Chamilo\CoreBundle\Entity\Session as SessionEntity;
 use Chamilo\CoreBundle\Entity\SkillRelUser;
 use Chamilo\CoreBundle\Entity\SkillRelUserComment;
+use Chamilo\CoreBundle\Entity\TrackELoginAttempt;
 use Chamilo\UserBundle\Entity\User;
 use Chamilo\UserBundle\Repository\UserRepository;
 use ChamiloSession as Session;
@@ -127,11 +128,77 @@ class UserManager
     }
 
     /**
-     * @param string $raw
+     * Detects and returns the type of encryption of the given encrypted
+     * password.
      *
-     * @return string
+     * @param string $encoded The encrypted password
+     * @param string $salt    The user salt, if any
      */
-    public static function encryptPassword($raw, User $user)
+    public static function detectPasswordEncryption(string $encoded, string $salt): string
+    {
+        $encryption = false;
+
+        $length = strlen($encoded);
+
+        $pattern = '/^\$2y\$04\$[A-Za-z0-9\.\/]{53}$/';
+
+        if ($length == 60 && preg_match($pattern, $encoded)) {
+            $encryption = 'bcrypt';
+        } elseif ($length == 32 && ctype_xdigit($encoded)) {
+            $encryption = 'md5';
+        } elseif ($length == 40 && ctype_xdigit($encoded)) {
+            $encryption = 'sha1';
+        } else {
+            $start = strpos($encoded, '{');
+            if ($start !== false && substr($encoded, -1, 1) == '}') {
+                if (substr($encoded, $start + 1, -1) == $salt) {
+                    $encryption = 'none';
+                }
+            }
+        }
+
+        return $encryption;
+    }
+
+    /**
+     * Checks if the password is correct for this user.
+     * If the password_conversion setting is true, also update the password
+     * in the database to a new encryption method.
+     *
+     * @param string $encoded Encrypted password
+     * @param string $raw     Clear password given through login form
+     * @param string $salt    User salt, if any
+     * @param int    $userId  The user's internal ID
+     */
+    public static function checkPassword(string $encoded, string $raw, string $salt, int $userId): bool
+    {
+        $result = false;
+
+        if (true === api_get_configuration_value('password_conversion')) {
+            $detectedEncryption = self::detectPasswordEncryption($encoded, $salt);
+            if (self::getPasswordEncryption() != $detectedEncryption) {
+                $encoder = new \Chamilo\UserBundle\Security\Encoder($detectedEncryption);
+                $result = $encoder->isPasswordValid($encoded, $raw, $salt);
+                if ($result) {
+                    $raw = $encoder->encodePassword($encoded, $salt);
+                    self::updatePassword($userId, $raw);
+                }
+            } else {
+                $result = self::isPasswordValid($encoded, $raw, $salt);
+            }
+        } else {
+            $result = self::isPasswordValid($encoded, $raw, $salt);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Encrypt the password using the current encoder.
+     *
+     * @param string $raw The clear password
+     */
+    public static function encryptPassword(string $raw, User $user): string
     {
         $encoder = self::getEncoder($user);
 
@@ -142,10 +209,12 @@ class UserManager
     }
 
     /**
-     * @param int    $userId
-     * @param string $password
+     * Update the password of the given user to the given (in-clear) password.
+     *
+     * @param int    $userId   Internal user ID
+     * @param string $password Password in clear
      */
-    public static function updatePassword($userId, $password)
+    public static function updatePassword(int $userId, string $password): void
     {
         $repository = self::getRepository();
         /** @var User $user */
@@ -154,6 +223,23 @@ class UserManager
         $user->setPlainPassword($password);
         $userManager->updateUser($user, true);
         Event::addEvent(LOG_USER_PASSWORD_UPDATE, LOG_USER_ID, $userId);
+    }
+
+    /**
+     * Updates user expiration date.
+     *
+     * @param int    $userId
+     * @param string $expirationDate
+     */
+    public static function updateExpirationDate($userId, $expirationDate)
+    {
+        $repository = self::getRepository();
+        /** @var User $user */
+        $user = $repository->find($userId);
+        $userManager = self::getManager();
+        $expirationDate = api_get_utc_datetime($expirationDate, false, true);
+        $user->setExpirationDate($expirationDate);
+        $userManager->updateUser($user, true);
     }
 
     /**
@@ -527,6 +613,8 @@ class UserManager
                 $tplContent->assign('original_password', stripslashes($original_password));
                 $tplContent->assign('mailWebPath', $url);
                 $tplContent->assign('new_user', $user);
+                // Adding this variable but not used in default template, used for task BT19518 with a customized template
+                $tplContent->assign('status_type', $status);
 
                 $layoutContent = $tplContent->get_template('mail/content_registration_platform.tpl');
                 $emailBody = $tplContent->fetch($layoutContent);
@@ -1135,7 +1223,7 @@ class UserManager
                 WHERE id_coach = '".$user_id."'";
         Database::query($sql);
 
-        $sql = "UPDATE $table_session SET id_coach = $currentUserId
+        $sql = "UPDATE $table_session SET session_admin_id = $currentUserId
                 WHERE session_admin_id = '".$user_id."'";
         Database::query($sql);
 
@@ -1635,6 +1723,8 @@ class UserManager
             }
             $tplContent->assign('original_password', $originalPassword);
             $tplContent->assign('portal_url', $url);
+            // Adding this variable but not used in default template, used for task BT19518 with a customized template
+            $tplContent->assign('status_type', $status);
 
             $layoutContent = $tplContent->get_template('mail/user_edit_content.tpl');
             $emailBody = $tplContent->fetch($layoutContent);
@@ -2030,12 +2120,21 @@ class UserManager
         $order_by = [],
         $limit_from = false,
         $limit_to = false,
-        $idCampus = null
+        $idCampus = null,
+        $keyword = null,
+        $lastConnectionDate = null,
+        $getCount = false,
+        $filterUsers = null
     ) {
         $user_table = Database::get_main_table(TABLE_MAIN_USER);
         $userUrlTable = Database::get_main_table(TABLE_MAIN_ACCESS_URL_REL_USER);
         $return_array = [];
-        $sql = "SELECT user.* FROM $user_table user ";
+
+        if ($getCount) {
+            $sql = "SELECT count(user.id) as nbUsers FROM $user_table user ";
+        } else {
+            $sql = "SELECT user.* FROM $user_table user ";
+        }
 
         if (api_is_multiple_url_enabled()) {
             if ($idCampus) {
@@ -2050,12 +2149,46 @@ class UserManager
             $sql .= " WHERE 1=1 ";
         }
 
+        if (!empty($keyword)) {
+            $keyword = trim(Database::escape_string($keyword));
+            $keywordParts = array_filter(explode(' ', $keyword));
+            $extraKeyword = '';
+            if (!empty($keywordParts)) {
+                $keywordPartsFixed = Database::escape_string(implode('%', $keywordParts));
+                if (!empty($keywordPartsFixed)) {
+                    $extraKeyword .= " OR
+                        CONCAT(user.firstname, ' ', user.lastname) LIKE '%$keywordPartsFixed%' OR
+                        CONCAT(user.lastname, ' ', user.firstname) LIKE '%$keywordPartsFixed%' ";
+                }
+            }
+
+            $sql .= " AND (
+                user.username LIKE '%$keyword%' OR
+                user.firstname LIKE '%$keyword%' OR
+                user.lastname LIKE '%$keyword%' OR
+                user.official_code LIKE '%$keyword%' OR
+                user.email LIKE '%$keyword%' OR
+                CONCAT(user.firstname, ' ', user.lastname) LIKE '%$keyword%' OR
+                CONCAT(user.lastname, ' ', user.firstname) LIKE '%$keyword%'
+                $extraKeyword
+            )";
+        }
+
+        if (!empty($lastConnectionDate)) {
+            $lastConnectionDate = Database::escape_string($lastConnectionDate);
+            $sql .= " AND user.last_login <= '$lastConnectionDate' ";
+        }
+
         if (count($conditions) > 0) {
             foreach ($conditions as $field => $value) {
                 $field = Database::escape_string($field);
                 $value = Database::escape_string($value);
                 $sql .= " AND $field = '$value'";
             }
+        }
+
+        if (!empty($filterUsers)) {
+            $sql .= " AND user.id IN(".implode(',', $filterUsers).")";
         }
 
         if (count($order_by) > 0) {
@@ -2068,6 +2201,13 @@ class UserManager
             $sql .= " LIMIT $limit_from, $limit_to";
         }
         $sql_result = Database::query($sql);
+
+        if ($getCount) {
+            $result = Database::fetch_array($sql_result);
+
+            return $result['nbUsers'];
+        }
+
         while ($result = Database::fetch_array($sql_result)) {
             $result['complete_name'] = api_get_person_name($result['firstname'], $result['lastname']);
             $return_array[] = $result;
@@ -2871,8 +3011,10 @@ class UserManager
         ];
         $column = (int) $column;
         $sort_direction = '';
-        if (in_array(strtoupper($direction), ['ASC', 'DESC'])) {
-            $sort_direction = strtoupper($direction);
+        if (!empty($direction)) {
+            if (in_array(strtoupper($direction), ['ASC', 'DESC'])) {
+                $sort_direction = strtoupper($direction);
+            }
         }
         $extraFieldType = EntityExtraField::USER_FIELD_TYPE;
         $sqlf = "SELECT * FROM $t_uf WHERE extra_field_type = $extraFieldType ";
@@ -3971,6 +4113,11 @@ class UserManager
             }
         }
 
+        $exlearnerCondition = "";
+        if (false !== api_get_configuration_value('user_edition_extra_field_to_check')) {
+            $exlearnerCondition = " AND scu.status NOT IN(".COURSE_EXLEARNER.")";
+        }
+
         /* This query is very similar to the query below, but it will check the
         session_rel_course_user table if there are courses registered
         to our user or not */
@@ -3979,6 +4126,7 @@ class UserManager
                     c.visibility,
                     c.id as real_id,
                     c.code as course_code,
+                    c.course_language,
                     sc.position,
                     c.unsubscribe
                 FROM $tbl_session_course_user as scu
@@ -3991,6 +4139,7 @@ class UserManager
                     scu.user_id = $user_id AND
                     scu.session_id = $session_id
                     $where_access_url
+                    $exlearnerCondition
                 ORDER BY sc.position ASC";
 
         $myCourseList = [];
@@ -4017,6 +4166,7 @@ class UserManager
                         c.visibility,
                         c.id as real_id,
                         c.code as course_code,
+                        c.course_language,
                         sc.position,
                         c.unsubscribe
                     FROM $tbl_session_course_user as scu
@@ -4034,6 +4184,7 @@ class UserManager
                         s.id_coach = $user_id
                       )
                     $where_access_url
+                    $exlearnerCondition
                     ORDER BY sc.position ASC";
             $result = Database::query($sql);
 
@@ -5349,7 +5500,8 @@ class UserManager
         $lastConnectionDate = null,
         $status = null,
         $keyword = null,
-        $checkSessionVisibility = false
+        $checkSessionVisibility = false,
+        $filterUsers = null
     ) {
         // Database Table Definitions
         $tbl_user = Database::get_main_table(TABLE_MAIN_USER);
@@ -5423,6 +5575,10 @@ class UserManager
         if (!empty($lastConnectionDate)) {
             $lastConnectionDate = Database::escape_string($lastConnectionDate);
             $userConditions .= " AND u.last_login <= '$lastConnectionDate' ";
+        }
+
+        if (!empty($filterUsers)) {
+            $userConditions .= " AND u.id IN(".implode(',', $filterUsers).")";
         }
 
         $sessionConditionsCoach = null;
@@ -5561,6 +5717,7 @@ class UserManager
             if (!empty($column) && !empty($direction)) {
                 // Fixing order due the UNIONs
                 $column = str_replace('u.', '', $column);
+                $column = trim($column);
                 $orderBy = " ORDER BY `$column` $direction ";
             }
         }
@@ -5787,6 +5944,7 @@ class UserManager
                     ON sru.user_id=u.id
                     WHERE
                         sru.c_id="'.$courseId.'" AND
+                        sru.session_id="'.$session.'" AND
                         sru.status = '.SessionEntity::COACH;
         }
 
@@ -5844,11 +6002,18 @@ class UserManager
      * @param string $course_code The course code
      * @param int    $session_id
      * @param int    $user_id     The user id
+     * @param string $startDate   date string
+     * @param string $endDate     date string
      *
      * @return array if there is not information return false
      */
-    public static function get_info_gradebook_certificate($course_code, $session_id, $user_id)
-    {
+    public static function get_info_gradebook_certificate(
+        $course_code,
+        $session_id,
+        $user_id,
+        $startDate = null,
+        $endDate = null
+    ) {
         $tbl_grade_certificate = Database::get_main_table(TABLE_MAIN_GRADEBOOK_CERTIFICATE);
         $tbl_grade_category = Database::get_main_table(TABLE_MAIN_GRADEBOOK_CATEGORY);
         $session_id = (int) $session_id;
@@ -5860,11 +6025,21 @@ class UserManager
             $session_condition = " AND session_id = $session_id";
         }
 
+        $dateConditions = "";
+        if (!empty($startDate)) {
+            $startDate = api_get_utc_datetime($startDate, false, true);
+            $dateConditions .= " AND created_at >= '".$startDate->format('Y-m-d 00:00:00')."' ";
+        }
+        if (!empty($endDate)) {
+            $endDate = api_get_utc_datetime($endDate, false, true);
+            $dateConditions .= " AND created_at <= '".$endDate->format('Y-m-d 23:59:59')."' ";
+        }
+
         $sql = 'SELECT * FROM '.$tbl_grade_certificate.'
                 WHERE cat_id = (
                     SELECT id FROM '.$tbl_grade_category.'
                     WHERE
-                        course_code = "'.Database::escape_string($course_code).'" '.$session_condition.'
+                        course_code = "'.Database::escape_string($course_code).'" '.$session_condition.' '.$dateConditions.'
                     LIMIT 1
                 ) AND user_id='.$user_id;
 
@@ -6037,6 +6212,146 @@ class UserManager
         Database::query($sql);
 
         return true;
+    }
+
+    /**
+     * It updates course relation type as EX-LEARNER if project name (extra field from user_edition_extra_field_to_check) is changed.
+     *
+     * @param $userId
+     * @param $extraValue
+     *
+     * @throws \Doctrine\DBAL\Exception
+     */
+    public static function updateCourseRelationTypeExLearner($userId, $extraValue)
+    {
+        if (false !== api_get_configuration_value('user_edition_extra_field_to_check')) {
+            $extraToCheck = api_get_configuration_value('user_edition_extra_field_to_check');
+
+            // Get the old user extra value to check
+            $userExtra = UserManager::get_extra_user_data_by_field($userId, $extraToCheck);
+            if (isset($userExtra[$extraToCheck]) && $userExtra[$extraToCheck] != $extraValue) {
+                // it searchs the courses with the user old extravalue
+                $extraFieldValues = new ExtraFieldValue('course');
+                $extraItems = $extraFieldValues->get_item_id_from_field_variable_and_field_value($extraToCheck, $userExtra[$extraToCheck], false, false, true);
+                $coursesTocheck = [];
+                if (!empty($extraItems)) {
+                    foreach ($extraItems as $items) {
+                        $coursesTocheck[] = $items['item_id'];
+                    }
+                }
+
+                $tblUserGroupRelUser = Database::get_main_table(TABLE_USERGROUP_REL_USER);
+                $tblUserGroupRelCourse = Database::get_main_table(TABLE_USERGROUP_REL_COURSE);
+                $tblUserGroupRelSession = Database::get_main_table(TABLE_USERGROUP_REL_SESSION);
+                $tblSessionUser = Database::get_main_table(TABLE_MAIN_SESSION_USER);
+                $tblCourseUser = Database::get_main_table(TABLE_MAIN_COURSE_USER);
+
+                // To check in main course
+                if (!empty($coursesTocheck)) {
+                    foreach ($coursesTocheck as $courseId) {
+                        $sql = "SELECT id FROM $tblCourseUser
+                                WHERE user_id = $userId AND c_id = $courseId";
+                        $rs = Database::query($sql);
+                        if (Database::num_rows($rs) > 0) {
+                            $id = Database::result($rs, 0, 0);
+                            $sql = "UPDATE $tblCourseUser SET relation_type = ".COURSE_EXLEARNER."
+                                    WHERE id = $id";
+                            Database::query($sql);
+                        }
+                    }
+                }
+
+                // To check in sessions
+                if (!empty($coursesTocheck)) {
+                    $tblSessionCourseUser = Database::get_main_table(TABLE_MAIN_SESSION_COURSE_USER);
+                    $sessionsToCheck = [];
+                    foreach ($coursesTocheck as $courseId) {
+                        $sql = "SELECT id, session_id FROM $tblSessionCourseUser
+                                WHERE user_id = $userId AND c_id = $courseId";
+                        $rs = Database::query($sql);
+                        if (Database::num_rows($rs) > 0) {
+                            $row = Database::fetch_array($rs);
+                            $id = $row['id'];
+                            $sessionId = $row['session_id'];
+                            $sql = "UPDATE $tblSessionCourseUser SET status = ".COURSE_EXLEARNER."
+                                    WHERE id = $id";
+                            Database::query($sql);
+                            $sessionsToCheck[] = $sessionId;
+                        }
+                    }
+                    // It checks if user is ex-learner in all courses in the session to update the session relation type
+                    if (!empty($sessionsToCheck)) {
+                        $sessionsToCheck = array_unique($sessionsToCheck);
+                        foreach ($sessionsToCheck as $sessionId) {
+                            $checkAll = Database::query("SELECT count(id) FROM $tblSessionCourseUser WHERE user_id = $userId AND session_id = $sessionId");
+                            $countAll = Database::result($checkAll, 0, 0);
+                            $checkExLearner = Database::query("SELECT count(id) FROM $tblSessionCourseUser WHERE status = ".COURSE_EXLEARNER." AND user_id = $userId AND session_id = $sessionId");
+                            $countExLearner = Database::result($checkExLearner, 0, 0);
+                            if ($countAll > 0 && $countAll == $countExLearner) {
+                                $sql = "UPDATE $tblSessionUser SET relation_type = ".COURSE_EXLEARNER."
+                                    WHERE user_id = $userId AND session_id = $sessionId";
+                                Database::query($sql);
+                            }
+                        }
+                    }
+                }
+                // To check users inside a class
+                $rsUser = Database::query("SELECT usergroup_id FROM $tblUserGroupRelUser WHERE user_id = $userId");
+                if (Database::num_rows($rsUser) > 0) {
+                    while ($rowUser = Database::fetch_array($rsUser)) {
+                        $usergroupId = $rowUser['usergroup_id'];
+
+                        // Count courses with exlearners
+                        $sqlC1 = "SELECT count(id) FROM $tblUserGroupRelCourse WHERE usergroup_id = $usergroupId";
+                        $rsCourses = Database::query($sqlC1);
+                        $countGroupCourses = Database::result($rsCourses, 0, 0);
+
+                        $sqlC2 = "SELECT count(cu.id)
+                                FROM $tblCourseUser cu
+                                INNER JOIN $tblUserGroupRelCourse gc
+                                    ON gc.course_id = cu.c_id
+                                WHERE
+                                    cu.user_id = $userId AND
+                                    usergroup_id = $usergroupId AND
+                                    relation_type = ".COURSE_EXLEARNER;
+                        $rsExCourses = Database::query($sqlC2);
+                        $countExCourses = Database::result($rsExCourses, 0, 0);
+                        $checkedExCourses = $countGroupCourses > 0 && ($countExCourses == $countGroupCourses);
+
+                        // Count sessions with exlearners
+                        $sqlS1 = "SELECT count(id) FROM $tblUserGroupRelSession WHERE usergroup_id = $usergroupId";
+                        $rsSessions = Database::query($sqlS1);
+                        $countGroupSessions = Database::result($rsSessions, 0, 0);
+
+                        $sqlS2 = "SELECT count(su.id)
+                                FROM $tblSessionUser su
+                                INNER JOIN $tblUserGroupRelSession gs
+                                    ON gs.session_id = su.session_id
+                                WHERE
+                                    su.user_id = $userId AND
+                                    usergroup_id = $usergroupId AND
+                                    relation_type = ".COURSE_EXLEARNER;
+                        $rsExSessions = Database::query($sqlS2);
+                        $countExSessions = Database::result($rsExSessions, 0, 0);
+                        $checkedExSessions = $countGroupSessions > 0 && ($countExSessions == $countGroupSessions);
+
+                        // it checks if usergroup user should be set to EXLEARNER
+                        $checkedExClassLearner = false;
+                        if ($countGroupCourses > 0 && $countGroupSessions == 0) {
+                            $checkedExClassLearner = $checkedExCourses;
+                        } elseif ($countGroupCourses == 0 && $countGroupSessions > 0) {
+                            $checkedExClassLearner = $checkedExSessions;
+                        } elseif ($countGroupCourses > 0 && $countGroupSessions > 0) {
+                            $checkedExClassLearner = ($checkedExCourses && $checkedExSessions);
+                        }
+
+                        if ($checkedExClassLearner) {
+                            Database::query("UPDATE $tblUserGroupRelUser SET relation_type = ".COURSE_EXLEARNER." WHERE user_id = $userId AND usergroup_id = $usergroupId");
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -6423,11 +6738,18 @@ SQL;
                     'url' => api_get_path(WEB_CODE_PATH).'group/group.php?'.api_get_cidreq(),
                     'content' => get_lang('Groups'),
                 ],
-                [
+                'classes' => [
                     'url' => $userPath.'class.php?'.api_get_cidreq(),
                     'content' => get_lang('Classes'),
                 ],
             ];
+
+            if (api_get_configuration_value('session_classes_tab_disable')
+                && !api_is_platform_admin()
+                && api_get_session_id()
+            ) {
+                unset($headers['classes']);
+            }
 
             return Display::tabsOnlyLink($headers, $optionSelected);
         }
@@ -6546,6 +6868,58 @@ SQL;
         }
 
         return [];
+    }
+
+    public static function blockIfMaxLoginAttempts(array $userInfo)
+    {
+        if (false === (bool) $userInfo['active'] || null === $userInfo['last_login']) {
+            return;
+        }
+
+        $maxAllowed = (int) api_get_configuration_value('login_max_attempt_before_blocking_account');
+
+        if ($maxAllowed <= 0) {
+            return;
+        }
+
+        $em = Database::getManager();
+
+        $countFailedAttempts = $em
+            ->getRepository(TrackELoginAttempt::class)
+            ->createQueryBuilder('la')
+            ->select('COUNT(la)')
+            ->where('la.username = :username')
+            ->andWhere('la.loginDate >= :last_login')
+            ->andWhere('la.success <> TRUE')
+            ->setParameters(
+                [
+                    'username' => $userInfo['username'],
+                    'last_login' => $userInfo['last_login'],
+                ]
+            )
+            ->getQuery()
+            ->getSingleScalarResult()
+        ;
+
+        if ($countFailedAttempts >= $maxAllowed) {
+            Database::update(
+                Database::get_main_table(TABLE_MAIN_USER),
+                ['active' => false],
+                ['username = ?' => $userInfo['username']]
+            );
+
+            Display::addFlash(
+                Display::return_message(
+                    sprintf(
+                        get_lang('XAccountDisabledByYAttempts'),
+                        $userInfo['username'],
+                        $countFailedAttempts
+                    ),
+                    'error',
+                    false
+                )
+            );
+        }
     }
 
     /**
@@ -7252,6 +7626,83 @@ SQL;
             $url = api_get_path(WEB_CODE_PATH).'auth/reset.php?token='.$uniqueId;
             api_location($url);
         }
+    }
+
+    /**
+     * It returns the list of user status available.
+     *
+     * @return array
+     */
+    public static function getUserStatusList()
+    {
+        $userStatusConfig = [];
+        // it gets the roles to show in creation/edition user
+        if (true === api_get_configuration_value('user_status_show_options_enabled')) {
+            $userStatusConfig = api_get_configuration_value('user_status_show_option');
+        }
+        // it gets the roles to show in creation/edition user (only for admins)
+        if (true === api_get_configuration_value('user_status_option_only_for_admin_enabled') && api_is_platform_admin()) {
+            $userStatusConfig = api_get_configuration_value('user_status_option_show_only_for_admin');
+        }
+
+        $status = [];
+        if (!empty($userStatusConfig)) {
+            $statusLang = api_get_status_langvars();
+            foreach ($userStatusConfig as $role => $enabled) {
+                if ($enabled) {
+                    $constStatus = constant($role);
+                    $status[$constStatus] = $statusLang[$constStatus];
+                }
+            }
+        } else {
+            $status[COURSEMANAGER] = get_lang('Teacher');
+            $status[STUDENT] = get_lang('Learner');
+            $status[DRH] = get_lang('Drh');
+            $status[SESSIONADMIN] = get_lang('SessionsAdmin');
+            $status[STUDENT_BOSS] = get_lang('RoleStudentBoss');
+            $status[INVITEE] = get_lang('Invitee');
+        }
+
+        return $status;
+    }
+
+    /**
+     * Get the expiration date by user status from configuration value.
+     *
+     * @param $status
+     *
+     * @throws Exception
+     *
+     * @return array
+     */
+    public static function getExpirationDateByRole($status)
+    {
+        $status = (int) $status;
+        $nbDaysByRole = api_get_configuration_value('user_number_of_days_for_default_expiration_date_per_role');
+        $dates = [];
+        if (!empty($nbDaysByRole)) {
+            $date = new DateTime();
+            foreach ($nbDaysByRole as $strVariable => $nDays) {
+                $constStatus = constant($strVariable);
+                if ($status == $constStatus) {
+                    $duration = "P{$nDays}D";
+                    $date->add(new DateInterval($duration));
+                    $newExpirationDate = $date->format('Y-m-d H:i');
+                    $formatted = api_format_date($newExpirationDate, DATE_TIME_FORMAT_LONG_24H);
+                    $dates = ['formatted' => $formatted, 'date' => $newExpirationDate];
+                }
+            }
+        }
+
+        return $dates;
+    }
+
+    public static function getAllowedRolesAsTeacher(): array
+    {
+        return [
+            COURSEMANAGER,
+            SESSIONADMIN,
+        ];
     }
 
     /**

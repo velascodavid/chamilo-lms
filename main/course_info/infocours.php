@@ -129,6 +129,10 @@ $form->applyFilter('department_url', 'html_filter');
 $extra_field = new ExtraField('course');
 $extraFieldAdminPermissions = false;
 $showOnlyTheseFields = ['tags', 'video_url', 'course_hours_duration', 'max_subscribed_students'];
+$extraFieldsToShow = api_get_configuration_value('course_configuration_tool_extra_fields_to_show_and_edit');
+if (false !== $extraFieldsToShow && !empty($extraFieldsToShow['fields'])) {
+    $showOnlyTheseFields = array_merge($showOnlyTheseFields, $extraFieldsToShow['fields']);
+}
 $extra = $extra_field->addElements(
     $form,
     $courseId,
@@ -212,48 +216,52 @@ $form->addHtml('</div>');
 
 // COURSE ACCESS
 $group = [];
-$group[] = $form->createElement(
-    'radio',
-    'visibility',
-    get_lang('CourseAccess'),
-    get_lang('OpenToTheWorld'),
-    COURSE_VISIBILITY_OPEN_WORLD
-);
-$group[] = $form->createElement(
-    'radio',
-    'visibility',
-    null,
-    get_lang('OpenToThePlatform'),
-    COURSE_VISIBILITY_OPEN_PLATFORM
-);
-$group[] = $form->createElement('radio', 'visibility', null, get_lang('Private'), COURSE_VISIBILITY_REGISTERED);
-$group[] = $form->createElement(
-    'radio',
-    'visibility',
-    null,
-    get_lang('CourseVisibilityClosed'),
-    COURSE_VISIBILITY_CLOSED
-);
-
-// The "hidden" visibility is only available to portal admins
-if (api_is_platform_admin()) {
+$groupElement = '';
+$visibilityChangeable = !api_get_configuration_value('course_visibility_change_only_admin');
+if ($visibilityChangeable) {
+    $group[] = $form->createElement(
+        'radio',
+        'visibility',
+        get_lang('CourseAccess'),
+        get_lang('OpenToTheWorld'),
+        COURSE_VISIBILITY_OPEN_WORLD
+    );
     $group[] = $form->createElement(
         'radio',
         'visibility',
         null,
-        get_lang('CourseVisibilityHidden'),
-        COURSE_VISIBILITY_HIDDEN
+        get_lang('OpenToThePlatform'),
+        COURSE_VISIBILITY_OPEN_PLATFORM
+    );
+    $group[] = $form->createElement('radio', 'visibility', null, get_lang('Private'), COURSE_VISIBILITY_REGISTERED);
+    $group[] = $form->createElement(
+        'radio',
+        'visibility',
+        null,
+        get_lang('CourseVisibilityClosed'),
+        COURSE_VISIBILITY_CLOSED
+    );
+
+    // The "hidden" visibility is only available to portal admins
+    if (api_is_platform_admin()) {
+        $group[] = $form->createElement(
+            'radio',
+            'visibility',
+            null,
+            get_lang('CourseVisibilityHidden'),
+            COURSE_VISIBILITY_HIDDEN
+        );
+    }
+
+    $groupElement = $form->addGroup(
+        $group,
+        '',
+        [get_lang('CourseAccess'), get_lang('CourseAccessConfigTip')],
+        null,
+        null,
+        true
     );
 }
-
-$groupElement = $form->addGroup(
-    $group,
-    '',
-    [get_lang('CourseAccess'), get_lang('CourseAccessConfigTip')],
-    null,
-    null,
-    true
-);
 
 $url = api_get_path(WEB_CODE_PATH)."auth/inscription.php?c=$course_code&e=1";
 $url = Display::url($url, $url);
@@ -513,6 +521,23 @@ if ($allowPortfolioTool) {
         2
     );
     $form->addGroup($group, '', [get_lang("EmailToTeachersWhenNewPost")]);
+
+    $group = [];
+    $group[] = $form->createElement(
+        'radio',
+        'email_alert_teachers_student_new_comment',
+        get_lang('EmailToTeachersAndStudentWhenNewComment'),
+        get_lang('Yes'),
+        1
+    );
+    $group[] = $form->createElement(
+        'radio',
+        'email_alert_teachers_student_new_comment',
+        null,
+        get_lang('No'),
+        2
+    );
+    $form->addGroup($group, '', [get_lang("EmailToTeachersAndStudentWhenNewComment")]);
 }
 
 $form->addButtonSave(get_lang('SaveSettings'), 'submit_save');
@@ -708,6 +733,26 @@ if ($allowLPReturnLink === 'true') {
         ),
     ];
     $form->addGroup($group, '', [get_lang('LpReturnLink')]);
+}
+
+if (api_get_configuration_value('lp_show_max_progress_or_average_enable_course_level_redefinition')) {
+    $group = [
+        $form->createElement(
+            'radio',
+            'lp_show_max_or_average_progress',
+            null,
+            get_lang('LpMaxProgress'),
+            'max'
+        ),
+        $form->createElement(
+            'radio',
+            'lp_show_max_or_average_progress',
+            null,
+            get_lang('LpAverageProgress'),
+            'average'
+        ),
+    ];
+    $form->addGroup($group, '', [get_lang('lpShowMaxProgressOrAverage')]);
 }
 
 $exerciseInvisible = api_get_setting('exercise_invisible_in_session');
@@ -908,10 +953,16 @@ $addUsers = [
     $form->createElement('radio', 'subscribe_users_to_forum_notifications', null, get_lang('No'), 2),
 ];
 
+$forumsInSessions = [
+    $form->createElement('radio', 'share_forums_in_sessions', null, get_lang('Yes'), 1),
+    $form->createElement('radio', 'share_forums_in_sessions', null, get_lang('No'), 2),
+];
+
 $globalGroup = [
     get_lang('EnableForumAutoLaunch') => $group,
     get_lang('HideForumNotifications') => $groupNotification,
     get_lang('SubscribeUsersToAllForumNotifications') => $addUsers,
+    get_lang('ShareForumsInSessions') => $forumsInSessions,
     '' => $myButton,
 ];
 
@@ -944,6 +995,34 @@ $form->addPanelOption(
     $globalGroup
 );
 
+// Agenda settings -->
+$group = [];
+$group[] = $form->createElement(
+    'radio',
+    'agenda_share_events_in_sessions',
+    null,
+    get_lang('AgendaEventsInBaseCourseWillBeVisibleInCourseSessions'),
+    1
+);
+$group[] = $form->createElement(
+    'radio',
+    'agenda_share_events_in_sessions',
+    null,
+    get_lang('AgendaEventsOnlyVisibleInCurrentCourse'), 0
+);
+
+$globalGroup = [
+    get_lang('ShareEventsInSessions') => $group,
+    '' => $form->addButtonSave(get_lang('SaveSettings'), 'submit_save', true),
+];
+
+$form->addPanelOption(
+    'agenda',
+    Display::return_icon('agenda.png', get_lang('Agenda')).' '.get_lang('Agenda'),
+    $globalGroup
+);
+// <-- end of agenda settings
+
 if ($allowPortfolioTool) {
     $globalGroup = [
         get_lang('QualifyPortfolioItems') => [
@@ -956,6 +1035,12 @@ if ($allowPortfolioTool) {
         ],
         get_lang('MaxScore') => [
             $form->createElement('number', 'portfolio_max_score', get_lang('MaxScore'), ['step' => 'any', 'min' => 0]),
+        ],
+        get_lang('RequiredNumberOfItems') => [
+            $form->createElement('number', 'portfolio_number_items', '', ['step' => '1', 'min' => 0]),
+        ],
+        get_lang('RequiredNumberOfComments') => [
+            $form->createElement('number', 'portfolio_number_comments', '', ['step' => '1', 'min' => 0]),
         ],
         $form->addButtonSave(get_lang('SaveSettings'), 'submit_save', true),
     ];
@@ -1026,7 +1111,11 @@ if ($form->validate() && is_settings_editable()) {
         );
     }
 
-    $visibility = $updateValues['visibility'];
+    if ($visibilityChangeable && isset($updateValues['visibility'])) {
+        $visibility = $updateValues['visibility'];
+    } else {
+        $visibility = $_course['visibility'];
+    }
     $deletePicture = isset($updateValues['delete_picture']) ? $updateValues['delete_picture'] : '';
 
     if ($deletePicture) {
@@ -1080,7 +1169,6 @@ if ($form->validate() && is_settings_editable()) {
         'category_code' => $updateValues['category_code'],
         'department_name' => $updateValues['department_name'],
         'department_url' => $updateValues['department_url'],
-        'visibility' => $updateValues['visibility'],
         'subscribe' => $updateValues['subscribe'],
         'unsubscribe' => $updateValues['unsubscribe'],
         'legal' => $updateValues['legal'],
@@ -1088,6 +1176,9 @@ if ($form->validate() && is_settings_editable()) {
         'registration_code' => $updateValues['course_registration_password'],
         'show_score' => $updateValues['show_score'],
     ];
+    if ($visibilityChangeable && isset($updateValues['visibility'])) {
+        $params['visibility'] = $visibility;
+    }
     $table = Database::get_main_table(TABLE_MAIN_COURSE);
     Database::update($table, $params, ['id = ?' => $courseId]);
     CourseManager::saveSettingChanges($_course, $params);

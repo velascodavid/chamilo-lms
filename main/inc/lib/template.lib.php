@@ -223,6 +223,10 @@ class Template
         $this->set_footer($show_footer);
         $this->set_header($show_header);
 
+        // Extra class for the main cm-content div
+        global $htmlContentExtraClass;
+        $this->setExtraContentClass($htmlContentExtraClass);
+
         $this->set_header_parameters($sendHeaders);
         $this->set_footer_parameters();
 
@@ -342,10 +346,10 @@ class Template
     /**
      * Shortcut to display a 1 col layout (index.php).
      * */
-    public function display_one_col_template()
+    public function display_one_col_template(bool $clearFlashMessages = true)
     {
         $tpl = $this->get_template('layout/layout_1_col.tpl');
-        $this->display($tpl);
+        $this->display($tpl, $clearFlashMessages);
     }
 
     /**
@@ -461,6 +465,28 @@ class Template
         }
         $this->assign('show_course_shortcut', $courseToolBar);
         $this->assign('show_course_navigation_menu', $show_course_navigation_menu);
+    }
+
+    /**
+     * Sets an extra class for the main cm-content div.
+     * To use, give a new row to $htmlContentExtraClass like so: `$htmlContentExtraClass[] = 'feature-item-user-skill-on';`
+     * before any Display::display_header() call.
+     */
+    public function setExtraContentClass($htmlContentExtraClass): void
+    {
+        if (empty($htmlContentExtraClass)) {
+            $extraClass = '';
+        } else {
+            if (is_array($htmlContentExtraClass)) {
+                $extraClass = implode(' ', $htmlContentExtraClass);
+            } else {
+                $extraClass = $htmlContentExtraClass;
+            }
+            $extraClass = Security::remove_XSS($extraClass);
+            $extraClass = trim($extraClass);
+            $extraClass = ' class="'.$extraClass.'"';
+        }
+        $this->assign('html_content_extra_class', $extraClass);
     }
 
     /**
@@ -764,6 +790,16 @@ class Template
             "select2/dist/js/i18n/$isoCode.js",
             'js-cookie/src/js.cookie.js',
         ];
+
+        if ($renderers = api_get_configuration_sub_value('video_player_renderers/renderers')) {
+            foreach ($renderers as $renderName) {
+                if ('youtube' === $renderName) {
+                    continue;
+                }
+
+                $bowerJsFiles[] = "mediaelement/build/renderers/$renderName.min.js";
+            }
+        }
 
         $viewBySession = api_get_setting('my_courses_view_by_session') === 'true';
 

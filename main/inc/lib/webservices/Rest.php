@@ -9,113 +9,124 @@ use Chamilo\CourseBundle\Entity\CLpCategory;
 use Chamilo\CourseBundle\Entity\CNotebook;
 use Chamilo\CourseBundle\Entity\Repository\CNotebookRepository;
 use Chamilo\UserBundle\Entity\User;
+use Symfony\Component\HttpFoundation\Request as HttpRequest;
 
 /**
  * Class RestApi.
  */
 class Rest extends WebService
 {
-    const SERVICE_NAME = 'MsgREST';
-    const EXTRA_FIELD_GCM_REGISTRATION = 'gcm_registration_id';
+    public const SERVICE_NAME = 'MsgREST';
+    public const EXTRA_FIELD_GCM_REGISTRATION = 'gcm_registration_id';
 
-    const GET_AUTH = 'authenticate';
-    const SAVE_GCM_ID = 'gcm_id';
-    const LOGOUT = 'logout';
+    public const GET_AUTH = 'authenticate';
+    public const SAVE_GCM_ID = 'gcm_id';
+    public const LOGOUT = 'logout';
 
-    const GET_USER_MESSAGES = 'user_messages';
-    const GET_USER_MESSAGES_RECEIVED = 'user_messages_received';
-    const DELETE_USER_MESSAGE = 'delete_user_message';
-    const GET_USER_MESSAGES_SENT = 'user_messages_sent';
-    const GET_COUNT_NEW_MESSAGES = 'get_count_new_messages';
-    const SET_MESSAGE_READ = 'set_message_read';
-    const POST_USER_MESSAGE_READ = 'user_message_read';
-    const POST_USER_MESSAGE_UNREAD = 'user_message_unread';
-    const SAVE_USER_MESSAGE = 'save_user_message';
-    const GET_MESSAGE_USERS = 'message_users';
-    const VIEW_MESSAGE = 'view_message';
+    public const GET_USER_MESSAGES = 'user_messages';
+    public const GET_USER_MESSAGES_RECEIVED = 'user_messages_received';
+    public const DELETE_USER_MESSAGE = 'delete_user_message';
+    public const GET_USER_MESSAGES_SENT = 'user_messages_sent';
+    public const GET_COUNT_NEW_MESSAGES = 'get_count_new_messages';
+    public const SET_MESSAGE_READ = 'set_message_read';
+    public const POST_USER_MESSAGE_READ = 'user_message_read';
+    public const POST_USER_MESSAGE_UNREAD = 'user_message_unread';
+    public const SAVE_USER_MESSAGE = 'save_user_message';
+    public const GET_MESSAGE_USERS = 'message_users';
+    public const VIEW_MESSAGE = 'view_message';
 
-    const GET_USER_COURSES = 'user_courses';
-    const GET_USER_SESSIONS = 'user_sessions';
+    public const GET_USER_COURSES = 'user_courses';
+    public const GET_USER_COURSES_BY_DATES = 'user_courses_by_dates';
+    public const GET_USER_SESSIONS = 'user_sessions';
 
-    const GET_PROFILE = 'user_profile';
+    public const VIEW_PROFILE = 'view_user_profile';
+    public const GET_PROFILE = 'user_profile';
+    public const GET_PROFILES_BY_EXTRA_FIELD = 'users_profiles_by_extra_field';
 
-    const GET_COURSE_INFO = 'course_info';
-    const GET_COURSE_DESCRIPTIONS = 'course_descriptions';
-    const GET_COURSE_DOCUMENTS = 'course_documents';
-    const GET_COURSE_ANNOUNCEMENTS = 'course_announcements';
-    const GET_COURSE_ANNOUNCEMENT = 'course_announcement';
-    const GET_COURSE_AGENDA = 'course_agenda';
-    const GET_COURSE_NOTEBOOKS = 'course_notebooks';
-    const GET_COURSE_FORUM_CATEGORIES = 'course_forumcategories';
-    const GET_COURSE_FORUM = 'course_forum';
-    const GET_COURSE_FORUM_THREAD = 'course_forumthread';
-    const GET_COURSE_LEARNPATHS = 'course_learnpaths';
-    const GET_COURSE_LEARNPATH = 'course_learnpath';
-    const GET_COURSE_LP_PROGRESS = 'course_lp_progress';
-    const GET_COURSE_LINKS = 'course_links';
-    const GET_COURSE_WORKS = 'course_works';
+    public const VIEW_MY_COURSES = 'view_my_courses';
+    public const VIEW_COURSE_HOME = 'view_course_home';
+    public const GET_COURSE_INFO = 'course_info';
+    public const GET_COURSE_DESCRIPTIONS = 'course_descriptions';
+    public const GET_COURSE_DOCUMENTS = 'course_documents';
+    public const GET_COURSE_ANNOUNCEMENTS = 'course_announcements';
+    public const GET_COURSE_ANNOUNCEMENT = 'course_announcement';
+    public const GET_COURSE_AGENDA = 'course_agenda';
+    public const GET_COURSE_NOTEBOOKS = 'course_notebooks';
+    public const GET_COURSE_FORUM_CATEGORIES = 'course_forumcategories';
+    public const GET_COURSE_FORUM = 'course_forum';
+    public const GET_COURSE_FORUM_THREAD = 'course_forumthread';
+    public const GET_COURSE_LEARNPATHS = 'course_learnpaths';
+    public const GET_COURSE_LEARNPATH = 'course_learnpath';
+    public const GET_COURSE_LP_PROGRESS = 'course_lp_progress';
+    public const GET_COURSE_LINKS = 'course_links';
+    public const GET_COURSE_WORKS = 'course_works';
+    public const GET_COURSES_DETAILS_BY_EXTRA_FIELD = 'courses_details_by_extra_field';
 
-    const SAVE_COURSE_NOTEBOOK = 'save_course_notebook';
+    public const SAVE_COURSE_NOTEBOOK = 'save_course_notebook';
 
-    const SAVE_FORUM_POST = 'save_forum_post';
-    const SAVE_FORUM_THREAD = 'save_forum_thread';
-    const SET_THREAD_NOTIFY = 'set_thread_notify';
-    const DOWNLOAD_FORUM_ATTACHMENT = 'download_forum_attachment';
+    public const SAVE_FORUM_POST = 'save_forum_post';
+    public const SAVE_FORUM_THREAD = 'save_forum_thread';
+    public const SET_THREAD_NOTIFY = 'set_thread_notify';
+    public const DOWNLOAD_FORUM_ATTACHMENT = 'download_forum_attachment';
 
-    const GET_WORK_LIST = 'get_work_list';
-    const GET_WORK_STUDENTS_WITHOUT_PUBLICATIONS = 'get_work_students_without_publications';
-    const GET_WORK_USERS = 'get_work_users';
-    const GET_WORK_STUDENT_LIST = 'get_work_student_list';
-    const PUT_WORK_STUDENT_ITEM_VISIBILITY = 'put_course_work_visibility';
-    const DELETE_WORK_STUDENT_ITEM = 'delete_work_student_item';
-    const DELETE_WORK_CORRECTIONS = 'delete_work_corrections';
-    const DOWNLOAD_WORK_FOLDER = 'download_work_folder';
-    const DOWNLOAD_WORK_COMMENT_ATTACHMENT = 'download_work_comment_attachment';
-    const DOWNLOAD_WORK = 'download_work';
+    public const GET_WORK_LIST = 'get_work_list';
+    public const GET_WORK_STUDENTS_WITHOUT_PUBLICATIONS = 'get_work_students_without_publications';
+    public const GET_WORK_USERS = 'get_work_users';
+    public const GET_WORK_STUDENT_LIST = 'get_work_student_list';
+    public const PUT_WORK_STUDENT_ITEM_VISIBILITY = 'put_course_work_visibility';
+    public const DELETE_WORK_STUDENT_ITEM = 'delete_work_student_item';
+    public const DELETE_WORK_CORRECTIONS = 'delete_work_corrections';
+    public const DOWNLOAD_WORK_FOLDER = 'download_work_folder';
+    public const DOWNLOAD_WORK_COMMENT_ATTACHMENT = 'download_work_comment_attachment';
+    public const DOWNLOAD_WORK = 'download_work';
 
-    const VIEW_DOCUMENT_IN_FRAME = 'view_document_in_frame';
+    public const VIEW_DOCUMENT_IN_FRAME = 'view_document_in_frame';
 
-    const VIEW_QUIZ_TOOL = 'view_quiz_tool';
+    public const VIEW_QUIZ_TOOL = 'view_quiz_tool';
 
-    const VIEW_SURVEY_TOOL = 'view_survey_tool';
+    public const VIEW_SURVEY_TOOL = 'view_survey_tool';
 
-    const CREATE_CAMPUS = 'add_campus';
-    const EDIT_CAMPUS = 'edit_campus';
-    const DELETE_CAMPUS = 'delete_campus';
+    public const CREATE_CAMPUS = 'add_campus';
+    public const EDIT_CAMPUS = 'edit_campus';
+    public const DELETE_CAMPUS = 'delete_campus';
 
-    const GET_USERS = 'get_users';
-    const USERNAME_EXIST = 'username_exist';
-    const SAVE_USER = 'save_user';
-    const SAVE_USER_JSON = 'save_user_json';
-    const UPDATE_USER_FROM_USERNAME = 'update_user_from_username';
-    const DELETE_USER = 'delete_user';
+    public const GET_USERS = 'get_users';
+    public const USERNAME_EXIST = 'username_exist';
+    public const SAVE_USER = 'save_user';
+    public const SAVE_USER_GET_APIKEY = 'save_user_get_apikey';
+    public const SAVE_USER_JSON = 'save_user_json';
+    public const UPDATE_USER_FROM_USERNAME = 'update_user_from_username';
+    public const UPDATE_USER_APIKEY = 'update_user_apikey';
+    public const DELETE_USER = 'delete_user';
+    public const GET_USERS_API_KEYS = 'get_users_api_keys';
+    public const GET_USER_API_KEY = 'get_user_api_key';
 
-    const GET_COURSES = 'get_courses';
-    const GET_COURSES_FROM_EXTRA_FIELD = 'get_courses_from_extra_field';
-    const SAVE_COURSE = 'save_course';
-    const DELETE_COURSE = 'delete_course';
+    public const GET_COURSES = 'get_courses';
+    public const GET_COURSES_FROM_EXTRA_FIELD = 'get_courses_from_extra_field';
+    public const SAVE_COURSE = 'save_course';
+    public const DELETE_COURSE = 'delete_course';
 
-    const GET_SESSION_FROM_EXTRA_FIELD = 'get_session_from_extra_field';
-    const SAVE_SESSION = 'save_session';
-    const CREATE_SESSION_FROM_MODEL = 'create_session_from_model';
-    const UPDATE_SESSION = 'update_session';
+    public const GET_SESSION_FROM_EXTRA_FIELD = 'get_session_from_extra_field';
+    public const SAVE_SESSION = 'save_session';
+    public const CREATE_SESSION_FROM_MODEL = 'create_session_from_model';
+    public const UPDATE_SESSION = 'update_session';
 
-    const SUBSCRIBE_USER_TO_COURSE = 'subscribe_user_to_course';
-    const SUBSCRIBE_USER_TO_COURSE_PASSWORD = 'subscribe_user_to_course_password';
-    const UNSUBSCRIBE_USER_FROM_COURSE = 'unsubscribe_user_from_course';
-    const GET_USERS_SUBSCRIBED_TO_COURSE = 'get_users_subscribed_to_course';
+    public const SUBSCRIBE_USER_TO_COURSE = 'subscribe_user_to_course';
+    public const SUBSCRIBE_USER_TO_COURSE_PASSWORD = 'subscribe_user_to_course_password';
+    public const UNSUBSCRIBE_USER_FROM_COURSE = 'unsubscribe_user_from_course';
+    public const GET_USERS_SUBSCRIBED_TO_COURSE = 'get_users_subscribed_to_course';
 
-    const ADD_COURSES_SESSION = 'add_courses_session';
-    const ADD_USERS_SESSION = 'add_users_session';
-    const SUBSCRIBE_USER_TO_SESSION_FROM_USERNAME = 'subscribe_user_to_session_from_username';
+    public const ADD_COURSES_SESSION = 'add_courses_session';
+    public const ADD_USERS_SESSION = 'add_users_session';
+    public const SUBSCRIBE_USER_TO_SESSION_FROM_USERNAME = 'subscribe_user_to_session_from_username';
 
-    const GET_COURSE_QUIZ_MDL_COMPAT = 'get_course_quiz_mdl_compat';
+    public const GET_COURSE_QUIZ_MDL_COMPAT = 'get_course_quiz_mdl_compat';
 
-    const UPDATE_USER_PAUSE_TRAINING = 'update_user_pause_training';
+    public const UPDATE_USER_PAUSE_TRAINING = 'update_user_pause_training';
 
-    const CHECK_CONDITIONAL_LOGIN = 'check_conditional_login';
-    const GET_LEGAL_CONDITIONS = 'get_legal_conditions';
-    const UPDATE_CONDITION_ACCEPTED = 'update_condition_accepted';
+    public const CHECK_CONDITIONAL_LOGIN = 'check_conditional_login';
+    public const GET_LEGAL_CONDITIONS = 'get_legal_conditions';
+    public const UPDATE_CONDITION_ACCEPTED = 'update_condition_accepted';
 
     /**
      * @var Session
@@ -381,9 +392,17 @@ class Rest extends WebService
 
     /**
      * Get the user courses.
+     *
+     * @throws Exception
      */
     public function getUserCourses($userId = 0): array
     {
+        if (!empty($userId)) {
+            if (!api_is_platform_admin() && $userId != $this->user->getId()) {
+                self::throwNotAllowedException();
+            }
+        }
+
         if (empty($userId)) {
             $userId = $this->user->getId();
         }
@@ -398,6 +417,8 @@ class Rest extends WebService
 
         $courses = CourseManager::get_courses_list_by_user_id($userId);
         $data = [];
+
+        $webCodePath = api_get_path(WEB_CODE_PATH).'webservices/api/v2.php?';
 
         foreach ($courses as $courseInfo) {
             /** @var Course $course */
@@ -414,6 +435,14 @@ class Rest extends WebService
                 'urlPicture' => $picturePath,
                 'teachers' => $teachers,
                 'isSpecial' => !empty($courseInfo['special_course']),
+                'url' => $webCodePath.http_build_query(
+                    [
+                        'action' => self::VIEW_COURSE_HOME,
+                        'api_key' => $this->apiKey,
+                        'username' => $this->user->getUsername(),
+                        'course' => $course->getId(),
+                    ]
+                ),
             ];
         }
 
@@ -964,9 +993,147 @@ class Rest extends WebService
     }
 
     /**
-     * @return array
+     * It gets the courses and visible tests of a user by dates.
+     *
+     * @throws Exception
      */
-    public function getUserProfile()
+    public function getUserCoursesByDates(int $userId, string $startDate, string $endDate): array
+    {
+        self::protectAdminEndpoint();
+        $userCourses = CourseManager::get_courses_list_by_user_id($userId);
+        $courses = [];
+        if (!empty($userCourses)) {
+            foreach ($userCourses as $course) {
+                $courseCode = $course['code'];
+                $courseId = $course['real_id'];
+                $exercises = Exercise::exerciseGrid(
+                    0,
+                    '',
+                    0,
+                    $courseId,
+                    0,
+                    true,
+                    0,
+                    0,
+                    0,
+                    null,
+                    false,
+                    false
+                );
+                $trackExercises = Tracking::getUserTrackExerciseByDates(
+                    $userId,
+                    $courseId,
+                    $startDate,
+                    $endDate
+                );
+                $takenExercises = [];
+                if (!empty($trackExercises)) {
+                    $totalSore = 0;
+                    foreach ($trackExercises as $track) {
+                        $takenExercises[] = $track['title'];
+                        $totalSore += $track['score'];
+                    }
+                    $avgScore = round($totalSore / count($trackExercises));
+                    $takenExercises['avg_score'] = $avgScore;
+                }
+                $courses[] = [
+                    'course_code' => $courseCode,
+                    'course_title' => $course['title'],
+                    'visible_tests' => $exercises,
+                    'taken_tests' => $takenExercises,
+                ];
+            }
+        }
+
+        return $courses;
+    }
+
+    /**
+     * Get the list of courses from extra field included count of visible exercises.
+     *
+     * @throws Exception
+     */
+    public function getCoursesByExtraField(string $fieldName, string $fieldValue): array
+    {
+        self::protectAdminEndpoint();
+        $extraField = new ExtraField('course');
+        $extraFieldInfo = $extraField->get_handler_field_info_by_field_variable($fieldName);
+
+        if (empty($extraFieldInfo)) {
+            throw new Exception("$fieldName not found");
+        }
+
+        $extraFieldValue = new ExtraFieldValue('course');
+        $items = $extraFieldValue->get_item_id_from_field_variable_and_field_value(
+            $fieldName,
+            $fieldValue,
+            false,
+            false,
+            true
+        );
+
+        $courses = [];
+        foreach ($items as $item) {
+            $courseId = $item['item_id'];
+            $courses[$courseId] = api_get_course_info_by_id($courseId);
+            $exercises = Exercise::exerciseGrid(
+                0,
+                '',
+                0,
+                $courseId,
+                0,
+                true,
+                0,
+                0,
+                0,
+                null,
+                false,
+                false
+            );
+            $courses[$courseId]['count_visible_tests'] = count($exercises);
+        }
+
+        return $courses;
+    }
+
+    /**
+     * Get the list of users from extra field.
+     *
+     * @throws Exception
+     */
+    public function getUsersProfilesByExtraField(string $fieldName, string $fieldValue): array
+    {
+        self::protectAdminEndpoint();
+        $users = [];
+        $extraValues = UserManager::get_extra_user_data_by_value(
+            $fieldName,
+            $fieldValue
+        );
+        if (!empty($extraValues)) {
+            foreach ($extraValues as $value) {
+                $userId = (int) $value;
+                $user = api_get_user_entity($userId);
+                $pictureInfo = UserManager::get_user_picture_path_by_id($user->getId(), 'web');
+                $users[$userId] = [
+                    'pictureUri' => $pictureInfo['dir'].$pictureInfo['file'],
+                    'id' => $userId,
+                    'status' => $user->getStatus(),
+                    'fullName' => UserManager::formatUserFullName($user),
+                    'username' => $user->getUsername(),
+                    'officialCode' => $user->getOfficialCode(),
+                    'phone' => $user->getPhone(),
+                    'extra' => [],
+                ];
+            }
+        }
+
+        return $users;
+    }
+
+    /**
+     * Get one's own profile.
+     */
+    public function getUserProfile(): array
     {
         $pictureInfo = UserManager::get_user_picture_path_by_id($this->user->getId(), 'web');
 
@@ -996,7 +1163,10 @@ class Rest extends WebService
         return $result;
     }
 
-    public function getCourseLpProgress()
+    /**
+     * Get one's own (avg) progress in learning paths.
+     */
+    public function getCourseLpProgress(): array
     {
         $sessionId = $this->session ? $this->session->getId() : 0;
         $userId = $this->user->getId();
@@ -1011,10 +1181,8 @@ class Rest extends WebService
 
     /**
      * @throws Exception
-     *
-     * @return array
      */
-    public function getCourseLearnPaths()
+    public function getCourseLearnPaths(): array
     {
         Event::event_access_tool(TOOL_LEARNPATH);
 
@@ -1128,10 +1296,8 @@ class Rest extends WebService
 
     /**
      * Start login for a user. Then make a redirect to show the learnpath.
-     *
-     * @param int $lpId
      */
-    public function showLearningPath($lpId)
+    public function showLearningPath(int $lpId)
     {
         $loggedUser['user_id'] = $this->user->getId();
         $loggedUser['status'] = $this->user->getStatus();
@@ -1187,6 +1353,8 @@ class Rest extends WebService
         $data = [];
         $sessionsByCategory = UserManager::get_sessions_by_category($this->user->getId(), false);
 
+        $webCodePath = api_get_path(WEB_CODE_PATH).'webservices/api/v2.php?';
+
         foreach ($sessionsByCategory as $category) {
             $categorySessions = [];
 
@@ -1208,6 +1376,15 @@ class Rest extends WebService
                         'pictureUrl' => $courseInfo['course_image_large'],
                         'urlPicture' => $courseInfo['course_image_large'],
                         'teachers' => $teachers,
+                        'url' => $webCodePath.http_build_query(
+                            [
+                                'action' => self::VIEW_COURSE_HOME,
+                                'api_key' => $this->apiKey,
+                                'username' => $this->user->getUsername(),
+                                'course' => $courseInfo['real_id'],
+                                'session' => $sessions['session_id'],
+                            ]
+                        ),
                     ];
                 }
 
@@ -1344,14 +1521,16 @@ class Rest extends WebService
     }
 
     /**
-     * @return array
+     * @throws Exception
      */
-    public function getUsersCampus(array $params)
+    public function getUsersCampus(array $params): array
     {
+        self::protectAdminEndpoint();
+
         $conditions = [
             'status' => $params['status'],
         ];
-        $idCampus = $params['id_campus'];
+        $idCampus = !empty($params['id_campus']) ?? 1;
         $users = UserManager::get_user_list($conditions, ['firstname'], false, false, $idCampus);
         $list = [];
         foreach ($users as $item) {
@@ -1387,10 +1566,12 @@ class Rest extends WebService
     }
 
     /**
-     * @return array
+     * @throws Exception
      */
-    public function addSession(array $params)
+    public function addSession(array $params): array
     {
+        self::protectAdminEndpoint();
+
         $name = $params['name'];
         $coach_username = (int) $params['coach_username'];
         $startDate = $params['access_start_date'];
@@ -1440,6 +1621,8 @@ class Rest extends WebService
 
     public function addCourse(array $courseParam): array
     {
+        self::protectAdminEndpoint();
+
         $idCampus = isset($courseParam['id_campus']) ? $courseParam['id_campus'] : 1;
         $title = isset($courseParam['title']) ? $courseParam['title'] : '';
         $wantedCode = isset($courseParam['wanted_code']) ? $courseParam['wanted_code'] : null;
@@ -1478,6 +1661,7 @@ class Rest extends WebService
         $results = [];
         if (!empty($courseInfo)) {
             $results['status'] = true;
+            $results['id'] = $courseInfo['real_id'];
             $results['code_course'] = $courseInfo['code'];
             $results['title_course'] = $courseInfo['title'];
             $extraFieldValues = new ExtraFieldValue('course');
@@ -1496,11 +1680,11 @@ class Rest extends WebService
      * @param $userParam
      *
      * @throws Exception
-     *
-     * @return array
      */
-    public function addUser($userParam)
+    public function addUser($userParam): array
     {
+        self::protectAdminEndpoint();
+
         $firstName = $userParam['firstname'];
         $lastName = $userParam['lastname'];
         $status = $userParam['status'];
@@ -1613,18 +1797,63 @@ class Rest extends WebService
     }
 
     /**
+     * @throws Exception
+     */
+    public function addUserGetApikey(array $userParams): array
+    {
+        list($userId) = $this->addUser($userParams);
+
+        UserManager::add_api_key($userId, self::SERVICE_NAME);
+
+        $apiKey = UserManager::get_api_keys($userId, self::SERVICE_NAME);
+
+        return [
+            'id' => $userId,
+            'api_key' => current($apiKey),
+        ];
+    }
+
+    /**
+     * @throws Exception
+     */
+    public function updateUserApiKey(int $userId, string $oldApiKey): array
+    {
+        if (!api_is_platform_admin() && $userId != $this->user->getId()) {
+            self::throwNotAllowedException();
+        }
+
+        if (false === $currentApiKeys = UserManager::get_api_keys($userId, self::SERVICE_NAME)) {
+            self::throwNotAllowedException();
+        }
+
+        if (current($currentApiKeys) !== $oldApiKey) {
+            self::throwNotAllowedException();
+        }
+
+        UserManager::update_api_key($userId, self::SERVICE_NAME);
+
+        $apiKey = UserManager::get_api_keys($userId, self::SERVICE_NAME);
+
+        return [
+            'api_key' => current($apiKey),
+        ];
+    }
+
+    /**
      * Subscribe User to Course.
      *
-     * @param array $params
-     *
-     * @return array
+     * @throws Exception
      */
-    public function subscribeUserToCourse($params)
+    public function subscribeUserToCourse(array $params): array
     {
         $course_id = $params['course_id'];
         $course_code = $params['course_code'];
         $user_id = $params['user_id'];
         $status = $params['status'] ?? STUDENT;
+
+        if (!api_is_platform_admin() && $user_id != $this->user->getId()) {
+            self::throwNotAllowedException();
+        }
 
         if (!$course_id && !$course_code) {
             return [false];
@@ -1660,11 +1889,18 @@ class Rest extends WebService
         throw new Exception(get_lang('CourseRegistrationCodeIncorrect'));
     }
 
+    /**
+     * @throws Exception
+     */
     public function unSubscribeUserToCourse(array $params): array
     {
         $courseId = $params['course_id'];
         $courseCode = $params['course_code'];
         $userId = $params['user_id'];
+
+        if (!api_is_platform_admin() && $userId != $this->user->getId()) {
+            self::throwNotAllowedException();
+        }
 
         if (!$courseId && !$courseCode) {
             return [false];
@@ -1690,9 +1926,15 @@ class Rest extends WebService
         }
     }
 
-    public function setMessageRead($messageId)
+    /**
+     * Set a given message as already read.
+     *
+     * @param $messageId
+     */
+    public function setMessageRead(int $messageId)
     {
-        MessageManager::update_message($this->user->getId(), $messageId);
+        // MESSAGE_STATUS_NEW is also used for messages that have been "read"
+        MessageManager::update_message_status($this->user->getId(), $messageId, MESSAGE_STATUS_NEW);
     }
 
     /**
@@ -1790,14 +2032,14 @@ class Rest extends WebService
 
     /**
      * @throws Exception
-     *
-     * @return array
      */
-    public function addCoursesSession(array $params)
+    public function addCoursesSession(array $params): array
     {
+        self::protectAdminEndpoint();
+
         $sessionId = $params['id_session'];
         $courseList = $params['list_courses'];
-        $importAssignments = isset($params['import_assignments']) ? 1 === (int) $params['import_assignments'] : false;
+        $importAssignments = isset($params['import_assignments']) && 1 === (int) $params['import_assignments'];
 
         $result = SessionManager::add_courses_to_session(
             $sessionId,
@@ -1822,15 +2064,19 @@ class Rest extends WebService
     }
 
     /**
-     * @return array
+     * @throws Exception
      */
-    public function addUsersSession(array $params)
+    public function addUsersSession(array $params): array
     {
         $sessionId = $params['id_session'];
         $userList = $params['list_users'];
 
         if (!is_array($userList)) {
             $userList = [];
+        }
+
+        if (!api_is_platform_admin() && !in_array($this->user->getId(), $userList)) {
+            self::throwNotAllowedException();
         }
 
         SessionManager::subscribeUsersToSession(
@@ -1849,17 +2095,19 @@ class Rest extends WebService
     /**
      * Creates a session from a model session.
      *
-     * @param $modelSessionId
-     * @param $sessionName
-     * @param $startDate
-     * @param $endDate
-     *
      * @throws Exception
-     *
-     * @return int, the id of the new session
      */
-    public function createSessionFromModel($modelSessionId, $sessionName, $startDate, $endDate, array $extraFields = [])
+    public function createSessionFromModel(HttpRequest $request): int
     {
+        self::protectAdminEndpoint();
+
+        $modelSessionId = $request->request->getInt('modelSessionId');
+        $sessionName = $request->request->get('sessionName');
+        $startDate = $request->request->get('startDate');
+        $endDate = $request->request->get('endDate');
+        $extraFields = $request->request->get('extraFields', []);
+        $duplicateAgendaContent = $request->request->getBoolean('duplicateAgendaContent');
+
         if (empty($modelSessionId) || empty($sessionName) || empty($startDate) || empty($endDate)) {
             throw new Exception(get_lang('NoData'));
         }
@@ -1935,6 +2183,26 @@ class Rest extends WebService
             throw new Exception(get_lang('CoursesNotAddedToSession'));
         }
 
+        $table = Database::get_main_table(TABLE_MAIN_SESSION_COURSE);
+        $courseListOrdered = SessionManager::get_course_list_by_session_id($modelSessionId, null, 'position');
+        $count = 0;
+        foreach ($courseListOrdered as $course) {
+            if ($course['position'] == '') {
+                $course['position'] = $count;
+            }
+            // Saving order.
+            $sql = "UPDATE $table SET position = ".$course['position']."
+                    WHERE session_id = $newSessionId AND c_id = '".$course['real_id']."'";
+            Database::query($sql);
+            $count++;
+        }
+
+        if ($duplicateAgendaContent) {
+            foreach ($courseList as $courseId) {
+                SessionManager::importAgendaFromSessionModel($modelSessionId, $newSessionId, $courseId);
+            }
+        }
+
         if (api_is_multiple_url_enabled()) {
             if (api_get_current_access_url_id() != -1) {
                 UrlManager::add_session_to_url(
@@ -1954,14 +2222,9 @@ class Rest extends WebService
     /**
      * subscribes a user to a session.
      *
-     * @param int    $sessionId the session id
-     * @param string $loginName the user's login name
-     *
      * @throws Exception
-     *
-     * @return boolean, whether it worked
      */
-    public function subscribeUserToSessionFromUsername($sessionId, $loginName)
+    public function subscribeUserToSessionFromUsername(int $sessionId, string $loginName): bool
     {
         if (!SessionManager::isValidId($sessionId)) {
             throw new Exception(get_lang('SessionNotFound'));
@@ -1970,6 +2233,10 @@ class Rest extends WebService
         $userId = UserManager::get_user_id_from_username($loginName);
         if (false === $userId) {
             throw new Exception(get_lang('UserNotFound'));
+        }
+
+        if (!api_is_platform_admin() && $userId != $this->user->getId()) {
+            self::throwNotAllowedException();
         }
 
         $subscribed = SessionManager::subscribeUsersToSession(
@@ -2022,19 +2289,15 @@ class Rest extends WebService
     }
 
     /**
-     * updates a user identified by its login name.
-     *
-     * @param array $parameters
+     * Updates a user identified by its login name.
      *
      * @throws Exception on failure
-     *
-     * @return boolean, true on success
      */
-    public function updateUserFromUserName($parameters)
+    public function updateUserFromUserName(array $parameters): bool
     {
         // find user
         $userId = null;
-        if (!is_array($parameters) || empty($parameters)) {
+        if (empty($parameters)) {
             throw new Exception('NoData');
         }
         foreach ($parameters as $name => $value) {
@@ -2049,6 +2312,11 @@ class Rest extends WebService
         if (is_null($userId)) {
             throw new Exception(get_lang('NoData'));
         }
+
+        if (!api_is_platform_admin() && $userId != $this->user->getId()) {
+            self::throwNotAllowedException();
+        }
+
         /** @var User $user */
         $user = UserManager::getRepository()->find($userId);
         if (empty($user)) {
@@ -2261,7 +2529,7 @@ class Rest extends WebService
         $json['modules'] = array_map(
             function (array $exercise) use ($quizIcon) {
                 return [
-                    'id' => $exercise['id'],
+                    'id' => (int) $exercise['id'],
                     'url' => $exercise['url'],
                     'name' => $exercise['name'],
                     'instance' => 1,
@@ -2291,6 +2559,8 @@ class Rest extends WebService
      */
     public function updateSession(array $params): array
     {
+        self::protectAdminEndpoint();
+
         $id = $params['session_id'];
         $reset = $params['reset'] ?? null;
         $name = $params['name'] ?? null;
@@ -2539,7 +2809,7 @@ class Rest extends WebService
         );
 
         if (false === $result) {
-            throw new Exception(get_lang('NotAllowed'));
+            self::throwNotAllowedException();
         }
 
         return $result;
@@ -2876,6 +3146,26 @@ class Rest extends WebService
         );
     }
 
+    public function viewUserProfile(int $userId)
+    {
+        $url = api_get_path(WEB_CODE_PATH).'social/profile.php';
+
+        if ($userId) {
+            $url .= '?'.http_build_query(['u' => $userId]);
+        }
+
+        header("Location: $url");
+        exit;
+    }
+
+    public function viewCourseHome()
+    {
+        $url = api_get_course_url($this->course->getCode(), $this->session ? $this->session->getId() : 0);
+
+        header("Location: $url");
+        exit;
+    }
+
     public function viewDocumentInFrame(int $documentId)
     {
         $courseCode = $this->course->getCode();
@@ -2999,6 +3289,86 @@ class Rest extends WebService
         exit;
     }
 
+    /**
+     * @throws Exception
+     */
+    public function getAllUsersApiKeys(int $page, int $length, bool $force = false, ?int $urlId = null): array
+    {
+        if (false === api_get_configuration_value('webservice_enable_adminonly_api')
+            || !UserManager::is_admin($this->user->getId())
+        ) {
+            self::throwNotAllowedException();
+        }
+
+        $limitOffset = ($page - 1) * $length;
+
+        $currentUrlId = $urlId ?: api_get_current_access_url_id();
+
+        $data = [];
+        $data['total'] = UserManager::get_number_of_users(0, $currentUrlId);
+        $data['list'] = array_map(
+            function (array $user) use ($force) {
+                $apiKeys = UserManager::get_api_keys($user['id'], self::SERVICE_NAME);
+                $apiKey = $apiKeys ? current($apiKeys) : null;
+
+                if ($force && empty($apiKey)) {
+                    $apiKey = self::generateApiKeyForUser((int) $user['id']);
+                }
+
+                return [
+                    'id' => (int) $user['id'],
+                    'username' => $user['username'],
+                    'api_key' => $apiKey,
+                ];
+            },
+            $users = UserManager::get_user_list([], [], $limitOffset, $length, $currentUrlId)
+        );
+        $data['length'] = count($users);
+
+        if ($page * $length < $data['total']) {
+            $nextPageQueryParams = [
+                'page' => $page + 1,
+                'per_page' => $length,
+                'url_id' => $urlId,
+            ];
+
+            $data['next'] = $this->generateUrl($nextPageQueryParams);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @throws Exception
+     */
+    public function getUserApiKey(string $username, bool $force = false): array
+    {
+        if (false === api_get_configuration_value('webservice_enable_adminonly_api')
+            || !UserManager::is_admin($this->user->getId())
+        ) {
+            self::throwNotAllowedException();
+        }
+
+        $userInfo = api_get_user_info_from_username($username);
+
+        if (empty($userInfo)) {
+            throw new Exception(get_lang('UserNotFound'));
+        }
+
+        $apiKeys = UserManager::get_api_keys($userInfo['id'], self::SERVICE_NAME);
+        $apiKey = $apiKeys ? current($apiKeys) : null;
+
+        if ($force && empty($apiKey)) {
+            $apiKey = self::generateApiKeyForUser((int) $userInfo['id']);
+        }
+
+        return [
+            'id' => $userInfo['id'],
+            'username' => $userInfo['username'],
+            'api_key' => $apiKey,
+        ];
+    }
+
     public static function isAllowedByRequest(bool $inpersonate = false): bool
     {
         $username = $_GET['username'] ?? null;
@@ -3021,6 +3391,24 @@ class Rest extends WebService
         return (bool) $restApi;
     }
 
+    public function viewMyCourses()
+    {
+        $url = api_get_path(WEB_PATH).'user_portal.php?'
+            .http_build_query(['nosession' => 'true']);
+
+        header("Location: $url");
+        exit;
+    }
+
+    protected static function generateApiKeyForUser(int $userId): string
+    {
+        UserManager::add_api_key($userId, self::SERVICE_NAME);
+
+        $apiKeys = UserManager::get_api_keys($userId, self::SERVICE_NAME);
+
+        return current($apiKeys);
+    }
+
     /**
      * @param array $additionalParams Optional
      *
@@ -3037,5 +3425,18 @@ class Rest extends WebService
         );
 
         return json_encode($params);
+    }
+
+    private function generateUrl(array $additionalParams = []): string
+    {
+        $queryParams = [
+            'course' => $this->course ? $this->course->getId() : null,
+            'session' => $this->session ? $this->session->getId() : null,
+            'api_key' => $this->apiKey,
+            'username' => $this->user->getUsername(),
+        ];
+
+        return api_get_self().'?'
+            .http_build_query(array_merge($queryParams, $additionalParams));
     }
 }

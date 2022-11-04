@@ -4,6 +4,10 @@
 /**
  * Configuration file for all authentication methods.
  * Uncomment and configure only the section(s) you need.
+ * For MultiURL configuration you can override the configuration
+ * of every variable by defining the same variable in app/config/configuration.php
+ * The configuration in app/config/configuration.php will replace
+ * the configuration in this file.
  * @package chamilo.conf.auth
  */
 
@@ -22,12 +26,21 @@
     'return_url' => api_get_path(WEB_PATH).'?action=fbconnect',
 );*/
 
+$facebookConfig = api_get_configuration_value('facebook_config');
+if (!empty($facebookConfig)) {
+    $facebook_config = $facebookConfig;
+}
 
 /**
  * Shibboleth
  */
 
 // $shibb_login = ...;
+
+$shibbLogin = api_get_configuration_value('shibb_login');
+if (!empty($shibbLogin)) {
+    $shibb_login = $shibbLogin;
+}
 
 /**
  * LDAP
@@ -39,9 +52,9 @@
  * Array of connection parameters
  **/
 $extldap_config = array(
-  //base dommain string
+  //base domain string
   'base_dn' => 'DC=cblue,DC=be',
-  //admin distinguished name
+  //admin distinguished name - might be just a term like "elearning" rather than a whole string
   'admin_dn' => 'CN=admin,dc=cblue,dc=be',
   //admin password
   'admin_password' => 'pass',
@@ -70,10 +83,13 @@ $extldap_config = array(
   'user_search_import_all_users' => 'uid=*'
 );
 
-
+$ldapConfig = api_get_configuration_value('extldap_config');
+if (!empty($ldapConfig)) {
+    $extldap_config = $ldapConfig;
+}
 
 /**
- * Correspondance array between chamilo user info and ldap user info
+ * Matching array between chamilo user info and ldap user info
  * This array is of this form :
  *  '<chamilo_field> => <ldap_field>
  *
@@ -113,6 +129,11 @@ $extldap_user_correspondance = array(
     ) */
 );
 
+$ldapUserCorrespondance = api_get_configuration_value('extldap_user_correspondance');
+if (!empty($ldapUserCorrespondance)) {
+    $extldap_user_correspondance = $ldapUserCorrespondance;
+}
+
 /**
  * Example method to get whether the user is an admin or not. Please implement your logic inside.
  */
@@ -143,3 +164,8 @@ $cas = [
     // 'fixedServiceURL' => false, // false by default, set to either true or to the service URL string if needed
     // sites might also need proxy_settings in configuration.php
 ];
+
+$casConfig = api_get_configuration_value('cas');
+if (!empty($casConfig)) {
+    $cas = $casConfig;
+}

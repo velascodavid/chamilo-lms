@@ -103,10 +103,11 @@ class WebService
             return false;
         }
 
-        return UserManager::isPasswordValid(
+        return UserManager::checkPassword(
             $user->getPassword(),
             $password,
-            $user->getSalt()
+            $user->getSalt(),
+            $user->getId()
         );
     }
 
@@ -116,5 +117,23 @@ class WebService
     public function getUser()
     {
         return $this->user;
+    }
+
+    /**
+     * @throws Exception
+     */
+    protected static function throwNotAllowedException()
+    {
+        throw new Exception(get_lang('NotAllowed'));
+    }
+
+    /**
+     * @throws Exception
+     */
+    protected static function protectAdminEndpoint()
+    {
+        if (!api_is_platform_admin()) {
+            self::throwNotAllowedException();
+        }
     }
 }

@@ -9,29 +9,29 @@
 class Notification extends Model
 {
     // mail_notify_message ("At once", "Daily", "No")
-    const NOTIFY_MESSAGE_AT_ONCE = 1;
-    const NOTIFY_MESSAGE_DAILY = 8;
-    const NOTIFY_MESSAGE_WEEKLY = 12;
-    const NOTIFY_MESSAGE_NO = 0;
+    public const NOTIFY_MESSAGE_AT_ONCE = 1;
+    public const NOTIFY_MESSAGE_DAILY = 8;
+    public const NOTIFY_MESSAGE_WEEKLY = 12;
+    public const NOTIFY_MESSAGE_NO = 0;
 
     // mail_notify_invitation ("At once", "Daily", "No")
-    const NOTIFY_INVITATION_AT_ONCE = 1;
-    const NOTIFY_INVITATION_DAILY = 8;
-    const NOTIFY_INVITATION_WEEKLY = 12;
-    const NOTIFY_INVITATION_NO = 0;
+    public const NOTIFY_INVITATION_AT_ONCE = 1;
+    public const NOTIFY_INVITATION_DAILY = 8;
+    public const NOTIFY_INVITATION_WEEKLY = 12;
+    public const NOTIFY_INVITATION_NO = 0;
 
     // mail_notify_group_message ("At once", "Daily", "No")
-    const NOTIFY_GROUP_AT_ONCE = 1;
-    const NOTIFY_GROUP_DAILY = 8;
-    const NOTIFY_GROUP_WEEKLY = 12;
-    const NOTIFY_GROUP_NO = 0;
+    public const NOTIFY_GROUP_AT_ONCE = 1;
+    public const NOTIFY_GROUP_DAILY = 8;
+    public const NOTIFY_GROUP_WEEKLY = 12;
+    public const NOTIFY_GROUP_NO = 0;
 
     // Notification types
-    const NOTIFICATION_TYPE_MESSAGE = 1;
-    const NOTIFICATION_TYPE_INVITATION = 2;
-    const NOTIFICATION_TYPE_GROUP = 3;
-    const NOTIFICATION_TYPE_WALL_MESSAGE = 4;
-    const NOTIFICATION_TYPE_DIRECT_MESSAGE = 5;
+    public const NOTIFICATION_TYPE_MESSAGE = 1;
+    public const NOTIFICATION_TYPE_INVITATION = 2;
+    public const NOTIFICATION_TYPE_GROUP = 3;
+    public const NOTIFICATION_TYPE_WALL_MESSAGE = 4;
+    public const NOTIFICATION_TYPE_DIRECT_MESSAGE = 5;
     public $table;
     public $columns = [
         'id',
@@ -293,7 +293,7 @@ class Notification extends Model
                 $userSetting = $defaultStatus;
 
                 if (!empty($settingInfo)) {
-                    $extra_data = UserManager::get_extra_user_data($user_id);
+                    $extra_data = UserManager::get_extra_user_data_by_field($user_id, $settingToCheck);
 
                     if (isset($extra_data[$settingToCheck])) {
                         $userSetting = $extra_data[$settingToCheck];
@@ -333,8 +333,8 @@ class Notification extends Model
                                 $userInfo['mail'],
                                 Security::filter_terms($titleToNotification),
                                 Security::filter_terms($content),
-                                $this->adminName,
-                                $this->adminEmail,
+                                !empty($senderInfo['complete_name']) ? $senderInfo['complete_name'] : $this->adminName,
+                                !empty($senderInfo['email']) ? $senderInfo['email'] : $this->adminEmail,
                                 $extraHeaders,
                                 $attachments,
                                 false,

@@ -11,6 +11,9 @@ In this case, Chamilo is used as provider , and this plugin allows a student ins
 
 # Installation
 
+*Prior to installing/uninstalling this plugin, you will need to make sure the src/Chamilo/PluginBundle/Entity folder is
+temporarily writeable by the web server.*
+
 1. Install the plugin from the Plugins page
 2. Enable the plugin from the Lti Provider Plugin Settings page
 3. Assign to the Administrator region (will appear on the management page)
@@ -44,4 +47,21 @@ CREATE TABLE plugin_lti_provider_platform_key (
   private_key LONGTEXT NOT NULL,
   PRIMARY KEY(id)
 ) DEFAULT CHARACTER SET utf8 COLLATE `utf8_unicode_ci` ENGINE = InnoDB;
+
+CREATE TABLE plugin_lti_provider_result (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  issuer longtext NOT NULL,
+  user_id int(11) NOT NULL,
+  client_uid int(11) NOT NULL,
+  course_code varchar(40) NOT NULL,
+  tool_id int(11) NOT NULL,
+  tool_name varchar(255) NOT NULL,
+  score double NOT NULL,
+  progress int(11) NOT NULL,
+  duration int(11) NOT NULL,
+  start_date datetime NOT NULL,
+  user_ip varchar(255) NOT NULL,
+  lti_launch_id varchar(255) NOT NULL,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 ```

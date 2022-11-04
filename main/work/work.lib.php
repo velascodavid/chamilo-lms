@@ -1598,8 +1598,8 @@ function getWorkListTeacherQuery(
             $whereCondition
         ORDER BY `$column` $direction";
 
-    if ($start != 0 && $limit != 0) {
-        $sql .= ' LIMIT $start, $limit';
+    if (!empty($start) && !empty($limit)) {
+        $sql .= " LIMIT $start, $limit";
     }
 
     return Database::query($sql);
@@ -2091,7 +2091,8 @@ function get_work_user_list(
     $studentId = null,
     $getCount = false,
     $courseId = 0,
-    $sessionId = 0
+    $sessionId = 0,
+    $shortTitle = true
 ) {
     $work_table = Database::get_course_table(TABLE_STUDENT_PUBLICATION);
     $user_table = Database::get_main_table(TABLE_MAIN_USER);
@@ -2302,7 +2303,12 @@ function get_work_user_list(
                 if ($work['qualification'] == '') {
                     $qualification_string = Display::label('-');
                 } else {
-                    $qualification_string = formatWorkScore($work['qualification'], $work_data['qualification']);
+                    if (empty($work['qualificator_id'])) {
+                        $finalScore = '?? / '.$work_data['qualification'];
+                        $qualification_string = Display::label($finalScore, 'warning');
+                    } else {
+                        $qualification_string = formatWorkScore($work['qualification'], $work_data['qualification']);
+                    }
                 }
             }
 
@@ -2333,7 +2339,7 @@ function get_work_user_list(
                 // Title
                 $work['title_clean'] = $work['title'];
                 $work['title'] = Security::remove_XSS($work['title']);
-                if (strlen($work['title']) > 30) {
+                if (strlen($work['title']) > 30 && $shortTitle) {
                     $short_title = substr($work['title'], 0, 27).'...';
                     $work['title'] = Display::span($short_title, ['class' => 'work-title', 'title' => $work['title']]);
                 } else {
@@ -2594,7 +2600,9 @@ function getAllWork(
     $whereCondition = '',
     $getCount = false,
     $courseId = 0,
-    $status = 0
+    $status = 0,
+    $onlyParents = false,
+    $shortTitle = true
 ) {
     $work_table = Database::get_course_table(TABLE_STUDENT_PUBLICATION);
     $user_table = Database::get_main_table(TABLE_MAIN_USER);
@@ -2713,6 +2721,7 @@ function getAllWork(
                     url_correction,
                     title_correction,
                     work.c_id,
+                    work.date_of_qualification,
                     work.session_id ';
     }
 
@@ -2727,13 +2736,16 @@ function getAllWork(
                 break;
         }
     }
-
+    $filterParents = 'work.parent_id <> 0';
+    if ($onlyParents) {
+        $filterParents = 'work.parent_id = 0';
+    }
     $sql = " $select
             FROM $work_table work
             INNER JOIN $user_table u
             ON (work.user_id = u.id)
             WHERE
-                work.parent_id <> 0 AND
+                $filterParents AND
                 work.active IN (1, 0)
                 $whereCondition AND
                 ($courseQueryToString)
@@ -2870,7 +2882,7 @@ function getAllWork(
             // Title
             $work['title_clean'] = $work['title'];
             $work['title'] = Security::remove_XSS($work['title']);
-            if (strlen($work['title']) > 30) {
+            if (strlen($work['title']) > 30 && $shortTitle) {
                 $short_title = substr($work['title'], 0, 27).'...';
                 $work['title'] = Display::span($short_title, ['class' => 'work-title', 'title' => $work['title']]);
             } else {
@@ -2933,7 +2945,7 @@ function getAllWork(
             } else {
                 $parent = get_work_data_by_id($work['parent_id'], $courseId);
             }
-            $work['work_name'] = $parent['title'];
+            $work['work_name'] = isset($parent['title']) ? $parent['title'] : '';
 
             // Actions.
             $action = '';
@@ -3065,6 +3077,13 @@ function getAllWork(
                 $action .= '<a href="'.$url.'work_list_all.php?'.$cidReq.'&id='.$work_id.'&action=delete&item_id='.$item_id.'" onclick="javascript:if(!confirm('."'".addslashes(api_htmlentities(get_lang('ConfirmYourChoice'), ENT_QUOTES))."'".')) return false;" title="'.get_lang('Delete').'" >'.
                     Display::return_icon('delete.png', get_lang('Delete'), '', ICON_SIZE_SMALL).'</a>';
             }*/
+            // Qualificator fullname and date of qualification
+            $work['qualificator_fullname'] = '';
+            if ($work['qualificator_id'] > 0) {
+                $qualificatorAuthor = api_get_user_info($work['qualificator_id']);
+                $work['qualificator_fullname'] = api_get_person_name($qualificatorAuthor['firstname'], $qualificatorAuthor['lastname']);
+                $work['date_of_qualification'] = api_convert_and_format_date($work['date_of_qualification'], DATE_TIME_FORMAT_SHORT);
+            }
             // Status.
             if (empty($work['qualificator_id'])) {
                 $qualificator_id = Display::label(get_lang('NotRevised'), 'warning');
@@ -4384,7 +4403,7 @@ function getWorkCommentForm($work, $workParent)
         );
     }
 
-    $form->addButtonSend(get_lang('Send'), 'button');
+    $form->addButtonSend(get_lang('Send'), 'button', false, ['onclick' => 'this.form.submit();this.disabled=true;']);
 
     return $form->returnForm();
 }
@@ -4484,13 +4503,15 @@ function setWorkUploadForm($form, $uploadFormType = 0)
             break;
         case 2:
             // Only file.
-            $form->addElement(
+            /*$form->addElement(
                 'file',
                 'file',
                 get_lang('UploadADocument'),
                 'size="40" onchange="updateDocumentTitle(this.value)"'
             );
             $form->addProgress();
+            */
+            $form->addElement('BigUpload', 'file', get_lang('UploadADocument'), ['id' => 'bigUploadFile', 'data-origin' => 'work']);
             $form->addRule('file', get_lang('ThisFieldIsRequired'), 'required');
             break;
     }
@@ -4515,7 +4536,7 @@ function uploadWork($my_folder_data, $_course, $isCorrection = false, $workInfo 
 
     if (empty($file['size'])) {
         return [
-            'error' => Display:: return_message(
+            'error' => Display::return_message(
                 get_lang('UplUploadFailedSizeIsZero'),
                 'error'
             ),
@@ -4574,13 +4595,21 @@ function uploadWork($my_folder_data, $_course, $isCorrection = false, $workInfo 
 
     // If we come from the group tools the groupid will be saved in $work_table
     if (is_dir($updir.$curdirpath) || empty($curdirpath)) {
-        $result = move_uploaded_file(
-            $file['tmp_name'],
-            $updir.$curdirpath.'/'.$new_file_name
-        );
+        if (isset($file['copy_file'])) {
+            $result = copy(
+                $file['tmp_name'],
+                $updir.$curdirpath.'/'.$new_file_name
+            );
+            unlink($file['tmp_name']);
+        } else {
+            $result = move_uploaded_file(
+                $file['tmp_name'],
+                $updir.$curdirpath.'/'.$new_file_name
+            );
+        }
     } else {
         return [
-            'error' => Display :: return_message(
+            'error' => Display::return_message(
                 get_lang('FolderDoesntExistsInFileSystem'),
                 'error'
             ),
@@ -5612,10 +5641,9 @@ function getFormWork($form, $defaults = [], $workId = 0)
 
     $form->addHtml('</div>');
 
-    $skillList = Skill::addSkillsToForm($form, ITEM_TYPE_STUDENT_PUBLICATION, $workId);
+    Skill::addSkillsToForm($form, api_get_course_int_id(), api_get_session_id(), ITEM_TYPE_STUDENT_PUBLICATION, $workId);
 
     if (!empty($defaults)) {
-        $defaults['skills'] = array_keys($skillList);
         $form->setDefaults($defaults);
     }
 
@@ -6503,4 +6531,64 @@ function workGetExtraFieldData($workId)
     }
 
     return $result;
+}
+
+/**
+ * Export the pending works to excel.
+ *
+ * @params $values
+ */
+function exportPendingWorksToExcel($values)
+{
+    $headers = [
+        get_lang('Course'),
+        get_lang('WorkName'),
+        get_lang('FullUserName'),
+        get_lang('Title'),
+        get_lang('Score'),
+        get_lang('Date'),
+        get_lang('Status'),
+        get_lang('Corrector'),
+        get_lang('CorrectionDate'),
+    ];
+    $tableXls[] = $headers;
+
+    $courseId = $values['course'] ?? 0;
+    $status = $values['status'] ?? 0;
+    $whereCondition = '';
+    if (!empty($values['work_parent_ids'])) {
+        $whereCondition = ' parent_id IN('.implode(',', $values['work_parent_ids']).')';
+    }
+    $allWork = getAllWork(
+        null,
+        null,
+        null,
+        null,
+        $whereCondition,
+        false,
+        $courseId,
+        $status
+    );
+    if (!empty($allWork)) {
+        foreach ($allWork  as $work) {
+            $score = $work['qualification_score'].'/'.$work['weight'];
+            $data = [
+                $work['course'],
+                $work['work_name'],
+                strip_tags($work['fullname']),
+                strip_tags($work['title']),
+                $score,
+                strip_tags($work['sent_date']),
+                strip_tags($work['qualificator_id']),
+                $work['qualificator_fullname'],
+                $work['date_of_qualification'],
+            ];
+            $tableXls[] = $data;
+        }
+    }
+
+    $fileName = get_lang('StudentPublicationToCorrect').'_'.api_get_local_time();
+    Export::arrayToXls($tableXls, $fileName);
+
+    return true;
 }

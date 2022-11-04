@@ -2086,13 +2086,14 @@ class Display
      *
      * @return string
      */
-    public static function tip($text, $tip)
+    public static function tip($text, $tip, string $tag = 'span')
     {
         if (empty($tip)) {
             return $text;
         }
 
-        return self::span(
+        return self::tag(
+            $tag,
             $text,
             ['class' => 'boot-tooltip', 'title' => strip_tags($tip)]
         );
@@ -2768,7 +2769,7 @@ HTML;
     /**
      * Returns the string "1 day ago" with a link showing the exact date time.
      *
-     * @param string $dateTime in UTC or a DateTime in UTC
+     * @param string|DateTime $dateTime in UTC or a DateTime in UTC
      *
      * @return string
      */
@@ -2866,13 +2867,11 @@ HTML;
         return $content;
     }
 
-    /**
-     * @param string $frameName
-     *
-     * @return string
-     */
-    public static function getFrameReadyBlock($frameName, $itemType = '')
-    {
+    public static function getFrameReadyBlock(
+        string $frameName,
+        string $itemType = '',
+        string $jsConditionalFunction = 'function () { return false; }'
+    ): string {
         $webPublicPath = api_get_path(WEB_PUBLIC_PATH);
         $webJsPath = api_get_path(WEB_LIBRARY_JS_PATH);
 
@@ -2911,6 +2910,17 @@ HTML;
             $videoPluginCssFiles .= '{type: "stylesheet", src: "'.$webJsPath.$file.'"},';
         }
 
+        if ($renderers = api_get_configuration_sub_value('video_player_renderers/renderers')) {
+            foreach ($renderers as $renderName) {
+                if ('youtube' === $renderName) {
+                    continue;
+                }
+
+                $file = $webPublicPath."assets/mediaelement/build/renderers/$renderName.min.js";
+                $videoPluginFiles .= '{type: "script", src: "'.$file.'"},';
+            }
+        }
+
         $translateHtml = '';
         $translate = api_get_configuration_value('translate_html');
         if ($translate) {
@@ -2923,15 +2933,28 @@ HTML;
             $fixLink = '{type:"script", src:"'.api_get_path(WEB_LIBRARY_PATH).'fixlinks.js"},';
         }
 
+        $videoContextMenyHiddenNative = '';
+        $videoContextMenyHiddenMejs = '';
+        if (api_get_configuration_value('video_context_menu_hidden')) {
+            $videoContextMenyHiddenNative = '$("video").on("contextmenu", function(e) {
+                e.preventDefault();
+            });';
+            $videoContextMenyHiddenMejs = '$(".mejs__container").on("contextmenu", function(e) {
+                e.preventDefault();
+            });';
+        }
+
         $videoFeatures = implode("','", $videoFeatures);
         $frameReady = '
         $.frameReady(function() {
              $(function () {
+                '.$videoContextMenyHiddenNative.'
+
                 $("video:not(.skip), audio:not(.skip)").mediaelementplayer({
                     pluginPath: "'.$webJsPath.'mediaelement/plugins/",
                     features: [\''.$videoFeatures.'\'],
                     success: function(mediaElement, originalNode, instance) {
-                        '.ChamiloApi::getQuizMarkersRollsJS().'
+                        '.$videoContextMenyHiddenMejs.PHP_EOL.ChamiloApi::getQuizMarkersRollsJS().'
                     },
                     vrPath: "'.$webPublicPath.'assets/vrview/build/vrview.js"
                 });
@@ -2980,7 +3003,7 @@ HTML;
             {type:"stylesheet", src:"'.$webPublicPath.'css/dialog.css"},
             {type:"stylesheet", src: "'.$webPublicPath.'assets/mediaelement/build/mediaelementplayer.min.css"},
             {type:"stylesheet", src: "'.$webJsPath.'mediaelement/plugins/vrview/vrview.css"},
-        ]);';
+        ], '.$jsConditionalFunction.');';
 
         return $frameReady;
     }
@@ -3006,5 +3029,15 @@ HTML;
     public static function get_image($image, $size = ICON_SIZE_SMALL, $name = '')
     {
         return self::return_icon($image, $name, [], $size);
+    }
+
+    public static function returnHeaderWithPercentage($header, $percentage)
+    {
+        $percentHtml = sprintf(
+            get_lang('XPercent'),
+            round($percentage, 2)
+        );
+
+        return "$header<br><small>$percentHtml</small>";
     }
 }

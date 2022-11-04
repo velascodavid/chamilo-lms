@@ -355,6 +355,7 @@ class ScheduledAnnouncement extends Model
                             // Take original message
                             $message = $result['message'];
                             $userInfo = api_get_user_info($user['user_id']);
+                            $userPicture = UserManager::getUserPicture($user['user_id'], USER_IMAGE_SIZE_ORIGINAL);
 
                             $progress = '';
                             if (!empty($sessionInfo) && !empty($courseInfo)) {
@@ -401,11 +402,13 @@ class ScheduledAnnouncement extends Model
                                 '((general_coach))' => $generalCoach,
                                 '((general_coach_email))' => $generalCoachEmail,
                                 '((session_end_date))' => $endTime,
+                                '((user_username))' => $userInfo['username'],
                                 '((user_complete_name))' => $userInfo['complete_name'],
                                 '((user_firstname))' => $userInfo['firstname'],
                                 '((user_lastname))' => $userInfo['lastname'],
                                 '((user_first_name))' => $userInfo['firstname'],
                                 '((user_last_name))' => $userInfo['lastname'],
+                                '((user_picture))' => $userPicture,
                                 '((lp_progress))' => $progress,
                             ];
 
@@ -451,9 +454,11 @@ class ScheduledAnnouncement extends Model
             '((session_end_date))',
             '((general_coach))',
             '((general_coach_email))',
+            '((user_username))',
             '((user_complete_name))',
             '((user_first_name))',
             '((user_last_name))',
+            '((user_picture))',
             '((lp_progress))',
         ];
 

@@ -377,7 +377,8 @@ if ($is_allowedToEdit) {
                     case 'delete':
                         // deletes an exercise
                         if ($allowDelete) {
-                            $result = $objExerciseTmp->delete();
+                            $deleteQuestions = api_get_configuration_value('quiz_question_delete_automatically_when_deleting_exercise') ? true : false;
+                            $result = $objExerciseTmp->delete(false, $deleteQuestions);
                             if ($result) {
                                 Display::addFlash(Display::return_message(get_lang('ExerciseDeleted'), 'confirmation'));
                             }
@@ -520,7 +521,7 @@ if ($is_allowedToEdit) {
                         exit();
                     case 'send_reminder':
                         $users = Exercise::getUsersInExercise(
-                            $objExerciseTmp->id,
+                            $objExerciseTmp->iid,
                             $courseId,
                             $sessionId
                         );
@@ -583,7 +584,7 @@ if ($is_allowedToEdit) {
                 $query = "SELECT iid FROM $TBL_DOCUMENT
                           WHERE c_id = $courseId AND path='".Database::escape_string($file)."'";
                 $res = Database::query($query);
-                $row = Database :: fetch_array($res, 'ASSOC');
+                $row = Database::fetch_array($res, 'ASSOC');
                 api_item_property_update(
                     $courseInfo,
                     TOOL_DOCUMENT,
@@ -604,7 +605,7 @@ if ($is_allowedToEdit) {
                 $query = "SELECT iid FROM $TBL_DOCUMENT
                           WHERE c_id = $courseId AND path='".Database::escape_string($file)."'";
                 $res = Database::query($query);
-                $row = Database :: fetch_array($res, 'ASSOC');
+                $row = Database::fetch_array($res, 'ASSOC');
                 api_item_property_update(
                     $courseInfo,
                     TOOL_DOCUMENT,
@@ -738,7 +739,6 @@ if (api_get_configuration_value('allow_exercise_categories') === false) {
     echo Exercise::exerciseGrid(0, $keyword);
 } else {
     if (empty($categoryId)) {
-        echo Display::page_subheader(get_lang('NoCategory'));
         echo Exercise::exerciseGrid(0, $keyword);
         $counter = 0;
         $manager = new ExerciseCategoryManager();

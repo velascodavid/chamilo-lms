@@ -25,10 +25,10 @@ use Monolog\Logger;
  */
 class SessionManager
 {
-    const STATUS_PLANNED = 1;
-    const STATUS_PROGRESS = 2;
-    const STATUS_FINISHED = 3;
-    const STATUS_CANCELLED = 4;
+    public const STATUS_PLANNED = 1;
+    public const STATUS_PROGRESS = 2;
+    public const STATUS_FINISHED = 3;
+    public const STATUS_CANCELLED = 4;
 
     public static $_debug = false;
 
@@ -140,13 +140,15 @@ class SessionManager
      * @param mixed  $coachId                      If int, this is the session coach id,
      *                                             if string, the coach ID will be looked for from the user table
      * @param int    $sessionCategoryId            ID of the session category in which this session is registered
-     * @param int    $visibility                   Visibility after end date (0 = read-only, 1 = invisible, 2 = accessible)
+     * @param int    $visibility                   Visibility after end date (0 = read-only, 1 = invisible, 2 =
+     *                                             accessible)
      * @param bool   $fixSessionNameIfExists
      * @param string $duration
      * @param string $description                  Optional. The session description
      * @param int    $showDescription              Optional. Whether show the session description
      * @param array  $extraFields
-     * @param int    $sessionAdminId               Optional. If this sessions was created by a session admin, assign it to him
+     * @param int    $sessionAdminId               Optional. If this sessions was created by a session admin, assign it
+     *                                             to him
      * @param bool   $sendSubscriptionNotification Optional.
      *                                             Whether send a mail notification to users being subscribed
      * @param int    $accessUrlId                  Optional.
@@ -1385,7 +1387,7 @@ class SessionManager
      */
     public static function get_user_data_access_tracking_overview(
         $sessionId,
-        $courseId,
+        $courseId = 0,
         $studentId = 0,
         $profile = '',
         $date_from = '',
@@ -1531,8 +1533,9 @@ class SessionManager
      *
      * @param string $session_name
      *                             <code>
-     *                             $wanted_code = 'curse' if there are in the DB codes like curse1 curse2 the function will return: course3
-     *                             if the course code doest not exist in the DB the same course code will be returned
+     *                             $wanted_code = 'curse' if there are in the DB codes like curse1 curse2 the function
+     *                             will return: course3 if the course code doest not exist in the DB the same course
+     *                             code will be returned
      *                             </code>
      *
      * @return string wanted unused code
@@ -1760,11 +1763,17 @@ class SessionManager
         $userGroupSessionTable = Database::get_main_table(TABLE_USERGROUP_REL_SESSION);
         $trackCourseAccess = Database::get_main_table(TABLE_STATISTIC_TRACK_E_COURSE_ACCESS);
         $trackAccess = Database::get_main_table(TABLE_STATISTIC_TRACK_E_ACCESS);
+        $tbl_learnpath = Database::get_course_table(TABLE_LP_MAIN);
+        $tbl_dropbox = Database::get_course_table(TABLE_DROPBOX_FILE);
+        $trackEExercises = Database::get_main_table(TABLE_STATISTIC_TRACK_E_EXERCISES);
+        $trackEAttempt = Database::get_main_table(TABLE_STATISTIC_TRACK_E_ATTEMPT);
 
         $ticket = Database::get_main_table(TABLE_TICKET_TICKET);
         $em = Database::getManager();
         $userId = api_get_user_id();
 
+        // If this session is involved in any sequence, cancel deletion and ask
+        // for the sequence update before deleting.
         /** @var SequenceResourceRepository $repo */
         $repo = Database::getManager()->getRepository('ChamiloCoreBundle:SequenceResource');
         $sequenceResource = $repo->findRequirementForResource(
@@ -1783,6 +1792,8 @@ class SessionManager
             return false;
         }
 
+        // If the $id_checked param is an array, split it into individual
+        // sessions deletion.
         if (is_array($id_checked)) {
             foreach ($id_checked as $sessionId) {
                 self::delete($sessionId);
@@ -1791,6 +1802,9 @@ class SessionManager
             $id_checked = intval($id_checked);
         }
 
+        // Check permissions from the person launching the deletion.
+        // If the call is issued from a web service or automated process,
+        // we assume the caller checks for permissions ($from_ws).
         if (self::allowed($id_checked) && !$from_ws) {
             $qb = $em
                 ->createQuery('
@@ -1808,11 +1822,14 @@ class SessionManager
 
         $sessionInfo = api_get_session_info($id_checked);
 
-        // Delete documents inside a session
+        // Delete documents and assignments inside a session
         $courses = self::getCoursesInSession($id_checked);
         foreach ($courses as $courseId) {
             $courseInfo = api_get_course_info_by_id($courseId);
+            // Delete documents
             DocumentManager::deleteDocumentsFromSession($courseInfo, $id_checked);
+
+            // Delete assignments
             $works = Database::select(
                 '*',
                 $tbl_student_publication,
@@ -1820,13 +1837,68 @@ class SessionManager
                     'where' => ['session_id = ? AND c_id = ?' => [$id_checked, $courseId]],
                 ]
             );
-
             $currentCourseRepositorySys = api_get_path(SYS_COURSE_PATH).$courseInfo['path'].'/';
             foreach ($works as $index => $work) {
                 if ($work['filetype'] = 'folder') {
                     Database::query("DELETE FROM $tbl_student_publication_assignment WHERE publication_id = $index");
                 }
                 my_delete($currentCourseRepositorySys.'/'.$work['url']);
+            }
+
+            // Delete learning paths
+            $learnpaths = Database::select(
+                'iid',
+                $tbl_learnpath,
+                [
+                    'where' => ['session_id = ? AND c_id = ?' => [$id_checked, $courseId]],
+                ]
+            );
+            $courseInfo = api_get_course_info_by_id($courseId);
+            foreach ($learnpaths as $lpData) {
+                $lp = new learnpath($courseInfo['code'], $lpData['iid'], $userId);
+                $lp->delete($courseInfo, $lpData['iid'], true);
+                unset($lp);
+            }
+
+            // Delete dropbox documents
+            $dropboxes = Database::select(
+                'iid',
+                $tbl_dropbox,
+                [
+                    'where' => ['session_id = ? AND c_id = ?' => [$id_checked, $courseId]],
+                ]
+            );
+            require_once __DIR__.'/../../dropbox/dropbox_functions.inc.php';
+            foreach ($dropboxes as $dropbox) {
+                $dropboxPerson = new Dropbox_Person(
+                    $userId,
+                    true,
+                    false,
+                    $courseId,
+                    $id_checked
+                );
+                $dropboxPerson->deleteReceivedWork($dropbox['iid'], $courseId, $id_checked);
+                $dropboxPerson->deleteSentWork($dropbox['iid'], $courseId, $id_checked);
+            }
+
+            // TODO: Delete audio files from test answers
+            $attempts = Database::select(
+                ['id', 'user_id', 'exe_id'],
+                $trackEAttempt,
+                [
+                    'where' => [
+                        'session_id = ? AND c_id = ? AND (filename IS NOT NULL AND filename != \'\')' => [
+                            $id_checked,
+                            $courseId,
+                        ],
+                    ],
+                ]
+            );
+            foreach ($attempts as $attempt) {
+                $oral = new OralExpression();
+                $oral->initFile($id_checked, $attempt['user_id'], 0, $attempt['exe_id'], $courseId);
+                $filename = $oral->getAbsoluteFilePath(true);
+                my_delete($filename);
             }
         }
 
@@ -2324,12 +2396,6 @@ class SessionManager
         $course_code = Database::escape_string($course_code);
         $courseInfo = api_get_course_info($course_code);
         $courseId = $courseInfo['real_id'];
-        $subscribe = (int) api_get_course_setting('subscribe_users_to_forum_notifications', $courseInfo);
-        $forums = [];
-        if ($subscribe === 1) {
-            require_once api_get_path(SYS_CODE_PATH).'forum/forumfunction.inc.php';
-            $forums = get_forums(0, $course_code, true, $session_id);
-        }
 
         if ($removeUsersNotInList) {
             $currentUsers = self::getUsersByCourseSession($session_id, $courseInfo, 0);
@@ -2357,16 +2423,6 @@ class SessionManager
             $session_id,
             ['visibility' => $session_visibility]
         );
-
-        if (!empty($forums)) {
-            foreach ($user_list as $enreg_user) {
-                $userInfo = api_get_user_info($enreg_user);
-                foreach ($forums as $forum) {
-                    $forumId = $forum['iid'];
-                    set_notification('forum', $forumId, false, $userInfo, $courseInfo);
-                }
-            }
-        }
     }
 
     /**
@@ -2558,6 +2614,8 @@ class SessionManager
             }
         }
 
+        $em = Database::getManager();
+
         // Pass through the courses list we want to add to the session
         foreach ($courseList as $courseId) {
             $courseInfo = api_get_course_info_by_id($courseId);
@@ -2581,7 +2639,7 @@ class SessionManager
                 if ($copyEvaluation) {
                     $cats = Category::load(null, null, $courseInfo['code']);
                     if (!empty($cats)) {
-                        $sessionCategory = Category:: load(
+                        $sessionCategory = Category::load(
                             null,
                             null,
                             $courseInfo['code'],
@@ -2708,6 +2766,21 @@ class SessionManager
                 $sql = "INSERT INTO $tbl_session_rel_course (session_id, c_id, nbr_users, position)
                         VALUES ($sessionId, $courseId, 0, 0)";
                 Database::query($sql);
+
+                if (api_get_configuration_value('allow_skill_rel_items')) {
+                    $skillRelCourseRepo = $em->getRepository('ChamiloSkillBundle:SkillRelCourse');
+                    $items = $skillRelCourseRepo->findBy(['course' => $courseId, 'session' => null]);
+                    /** @var \Chamilo\SkillBundle\Entity\SkillRelCourse $item */
+                    foreach ($items as $item) {
+                        $exists = $skillRelCourseRepo->findOneBy(['course' => $courseId, 'session' => $session]);
+                        if (null === $exists) {
+                            $skillRelCourse = clone $item;
+                            $skillRelCourse->setSession($session);
+                            $em->persist($skillRelCourse);
+                        }
+                    }
+                    $em->flush();
+                }
 
                 Event::addEvent(
                     LOG_SESSION_ADD_COURSE,
@@ -3401,9 +3474,10 @@ class SessionManager
         $tblSessionRelUser = Database::get_main_table(TABLE_MAIN_SESSION_USER);
         $tblUser = Database::get_main_table(TABLE_MAIN_USER);
 
+        $allowedTeachers = implode(',', UserManager::getAllowedRolesAsTeacher());
+
         // check if user is a teacher
-        $sql = "SELECT * FROM $tblUser
-                WHERE status = 1 AND user_id = $userId";
+        $sql = "SELECT * FROM $tblUser WHERE status IN ($allowedTeachers) AND user_id = $userId";
 
         $rsCheckUser = Database::query($sql);
 
@@ -4734,7 +4808,7 @@ class SessionManager
      * @param int  $id
      * @param bool $checkSession
      *
-     * @return mixed | bool true if pass the check, api_not_allowed otherwise
+     * @return mixed|bool true if pass the check, api_not_allowed otherwise
      */
     public static function protectSession($id, $checkSession = true)
     {
@@ -4871,11 +4945,15 @@ class SessionManager
     /**
      * @param string $file
      * @param bool   $updateSession                                   true: if the session exists it will be updated.
-     *                                                                false: if session exists a new session will be created adding a counter session1, session2, etc
+     *                                                                false: if session exists a new session will be
+     *                                                                created adding a counter session1, session2, etc
      * @param int    $defaultUserId
      * @param Logger $logger
-     * @param array  $extraFields                                     convert a file row to an extra field. Example in CSV file there's a SessionID
-     *                                                                then it will converted to extra_external_session_id if you set: array('SessionId' => 'extra_external_session_id')
+     * @param array  $extraFields                                     convert a file row to an extra field. Example in
+     *                                                                CSV file there's a SessionID then it will
+     *                                                                converted to extra_external_session_id if you
+     *                                                                set: array('SessionId' =>
+     *                                                                'extra_external_session_id')
      * @param string $extraFieldId
      * @param int    $daysCoachAccessBeforeBeginning
      * @param int    $daysCoachAccessAfterBeginning
@@ -5092,7 +5170,7 @@ class SessionManager
                         if ($i > 1) {
                             $suffix = ' - '.$i;
                         }
-                        $sql = 'SELECT 1 FROM '.$tbl_session.'
+                        $sql = 'SELECT id FROM '.$tbl_session.'
                                 WHERE name="'.Database::escape_string($session_name).$suffix.'"';
                         $rs = Database::query($sql);
                         if (Database::result($rs, 0, 0)) {
@@ -5358,18 +5436,19 @@ class SessionManager
                     $extraFieldValueCareer = new ExtraFieldValue('career');
                     $careerList = isset($enreg['extra_careerid']) && !empty($enreg['extra_careerid']) ? $enreg['extra_careerid'] : [];
                     $careerList = str_replace(['[', ']'], '', $careerList);
-                    $careerList = explode(',', $careerList);
                     $finalCareerIdList = [];
-                    foreach ($careerList as $careerId) {
-                        $realCareerIdList = $extraFieldValueCareer->get_item_id_from_field_variable_and_field_value(
-                            'external_career_id',
-                            $careerId
-                        );
-                        if (isset($realCareerIdList['item_id'])) {
-                            $finalCareerIdList[] = $realCareerIdList['item_id'];
+                    if (!empty($careerList)) {
+                        $careerList = explode(',', $careerList);
+                        foreach ($careerList as $careerId) {
+                            $realCareerIdList = $extraFieldValueCareer->get_item_id_from_field_variable_and_field_value(
+                                'external_career_id',
+                                $careerId
+                            );
+                            if (isset($realCareerIdList['item_id'])) {
+                                $finalCareerIdList[] = $realCareerIdList['item_id'];
+                            }
                         }
                     }
-
                     foreach ($users as $user) {
                         $user_id = UserManager::get_user_id_from_username($user);
                         if ($user_id !== false) {
@@ -6011,7 +6090,8 @@ class SessionManager
         $lastConnectionDate = null,
         $sessionIdList = [],
         $studentIdList = [],
-        $filterByStatus = null
+        $filterByStatus = null,
+        $filterUsers = null
     ) {
         $filterByStatus = (int) $filterByStatus;
         $userId = (int) $userId;
@@ -6123,6 +6203,10 @@ class SessionManager
         if (!empty($lastConnectionDate)) {
             $lastConnectionDate = Database::escape_string($lastConnectionDate);
             $userConditions .= " AND u.last_login <= '$lastConnectionDate' ";
+        }
+
+        if (!empty($filterUsers)) {
+            $userConditions .= " AND u.id IN(".implode(',', $filterUsers).")";
         }
 
         if (!empty($keyword)) {
@@ -6421,7 +6505,6 @@ class SessionManager
     ) {
         $userId = api_get_user_id();
         $drhLoaded = false;
-
         if (api_is_drh()) {
             if (api_drh_can_access_all_session_content()) {
                 $count = self::getAllUsersFromCoursesFromAllSessionFromStatus(
@@ -6439,6 +6522,24 @@ class SessionManager
                     $studentIdList,
                     $filterUserStatus
                 );
+                $drhLoaded = true;
+            }
+            $allowDhrAccessToAllStudents = api_get_configuration_value('drh_allow_access_to_all_students');
+            if ($allowDhrAccessToAllStudents) {
+                $conditions = ['status' => STUDENT];
+                if (isset($active)) {
+                    $conditions['active'] = (int) $active;
+                }
+                $students = UserManager::get_user_list(
+                    $conditions,
+                    [],
+                    false,
+                    false,
+                    null,
+                    $keyword,
+                    $lastConnectionDate
+                );
+                $count = count($students);
                 $drhLoaded = true;
             }
         }
@@ -9599,6 +9700,18 @@ class SessionManager
         $tblSession = Database::get_main_table(TABLE_MAIN_SESSION);
 
         $relationInfo = array_merge(['visibility' => 0, 'status' => Session::STUDENT], $relationInfo);
+        $courseInfo = api_get_course_info_by_id($courseId);
+        $courseCode = $courseInfo['code'];
+        $subscribeToForums = (int) api_get_course_setting('subscribe_users_to_forum_notifications', $courseInfo);
+        if ($subscribeToForums) {
+            $forums = [];
+            $forumsBaseCourse = [];
+            require_once api_get_path(SYS_CODE_PATH).'forum/forumfunction.inc.php';
+            $forums = get_forums(0, $courseCode, true, $sessionId);
+            if (api_get_configuration_value('subscribe_users_to_forum_notifications_also_in_base_course')) {
+                $forumsBaseCourse = get_forums(0, $courseCode, true, 0);
+            }
+        }
 
         $sessionCourseUser = [
             'session_id' => $sessionId,
@@ -9625,6 +9738,21 @@ class SessionManager
                 Database::insert($tblSessionCourseUser, $sessionCourseUser);
 
                 Event::logUserSubscribedInCourseSession($studentId, $courseId, $sessionId);
+                if ($subscribeToForums) {
+                    $userInfo = api_get_user_info($studentID);
+                    if (!empty($forums)) {
+                        foreach ($forums as $forum) {
+                            $forumId = $forum['iid'];
+                            set_notification('forum', $forumId, false, $userInfo, $courseInfo);
+                        }
+                    }
+                    if (!empty($forumsBaseCourse)) {
+                        foreach ($forumsBaseCourse as $forum) {
+                            $forumId = $forum['iid'];
+                            set_notification('forum', $forumId, false, $userInfo, $courseInfo);
+                        }
+                    }
+                }
             }
 
             if ($updateSession) {
@@ -9749,6 +9877,46 @@ class SessionManager
         }
 
         return $content;
+    }
+
+    public static function importAgendaFromSessionModel(int $modelSessionId, int $sessionId, int $courseId)
+    {
+        $em = Database::getManager();
+        $repo = $em->getRepository('ChamiloCourseBundle:CCalendarEvent');
+
+        $courseInfo = api_get_course_info_by_id($courseId);
+        $session = api_get_session_entity($sessionId);
+        $modelSession = api_get_session_entity($modelSessionId);
+
+        $sessionDateDiff = $modelSession->getAccessStartDate()->diff($session->getAccessStartDate());
+
+        $events = $repo->findBy(
+            ['cId' => $courseId, 'sessionId' => $modelSessionId]
+        );
+
+        $agenda = new Agenda('course');
+        $agenda->set_course($courseInfo);
+        $agenda->setSessionId($sessionId);
+
+        foreach ($events as $event) {
+            $startDate = $event->getStartDate()->add($sessionDateDiff);
+            $endDate = $event->getEndDate()->add($sessionDateDiff);
+
+            $agenda->addEvent(
+                $startDate->format('Y-m-d H:i:s'),
+                $endDate->format('Y-m-d H:i:s'),
+                'false',
+                $event->getTitle(),
+                $event->getContent(),
+                ['GROUP:0'],
+                false,
+                null,
+                [],
+                [],
+                $event->getComment(),
+                $event->getColor()
+            );
+        }
     }
 
     /**

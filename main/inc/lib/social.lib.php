@@ -16,8 +16,8 @@ use Zend\Feed\Reader\Reader;
  */
 class SocialManager extends UserManager
 {
-    const DEFAULT_WALL_POSTS = 10;
-    const DEFAULT_SCROLL_NEW_POST = 5;
+    public const DEFAULT_WALL_POSTS = 10;
+    public const DEFAULT_SCROLL_NEW_POST = 5;
 
     /**
      * Constructor.
@@ -2122,6 +2122,8 @@ class SocialManager extends UserManager
      * Soft delete a message and his chidren.
      *
      * @param int $id id message to delete
+     *
+     * @throws Exception if file cannot be deleted in delete_message_attachment_file()
      *
      * @return bool status query
      */

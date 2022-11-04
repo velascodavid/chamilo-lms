@@ -131,12 +131,21 @@ $is_western_name_order = api_is_western_name_order();
 $sort_by_first_name = api_sort_by_first_name();
 
 // Build table
-$table = new SortableTable(
-    'subscribe_users',
-    'get_number_of_users',
-    'get_user_data',
-    ($is_western_name_order xor $sort_by_first_name) ? 3 : 2
-);
+if (api_get_configuration_value('session_course_users_subscription_limited_to_session_users') && !empty($sessionId)) {
+    $table = new SortableTable(
+        'subscribe_users',
+        'getRestrictedSessionNumberOfUsers',
+        'getRestrictedSessionUserList',
+        ($is_western_name_order xor $sort_by_first_name) ? 3 : 2
+    );
+} else {
+    $table = new SortableTable(
+        'subscribe_users',
+        'get_number_of_users',
+        'get_user_data',
+        ($is_western_name_order xor $sort_by_first_name) ? 3 : 2
+    );
+}
 $parameters['keyword'] = $keyword;
 $parameters['type'] = $type;
 $table->set_additional_parameters($parameters);
@@ -166,7 +175,7 @@ if (!empty($_POST['keyword'])) {
     echo '<br/>'.get_lang('SearchResultsFor').' <span style="font-style: italic ;"> '.$keyword_name.' </span><br>';
 }
 
-Display :: display_header($tool_name, 'User');
+Display::display_header($tool_name, 'User');
 
 // Build search-form
 switch ($type) {
@@ -216,6 +225,96 @@ Display::display_footer();
 
 /*		SHOW LIST OF USERS  */
 
+function getRestrictedSessionNumberOfUsers(): int
+{
+    $tblUser = Database::get_main_table(TABLE_MAIN_USER);
+    $tblSessionRelUser = Database::get_main_table(TABLE_MAIN_SESSION_USER);
+    $tblSessionRelCourseRelUser = Database::get_main_table(TABLE_MAIN_SESSION_COURSE_USER);
+    $urlTable = Database::get_main_table(TABLE_MAIN_ACCESS_URL_REL_USER);
+
+    $sessionId = api_get_session_id();
+    $courseId = api_get_course_int_id();
+    $urlAccessId = api_get_current_access_url_id();
+
+    $sql = "SELECT COUNT(DISTINCT u.id) nbr
+        FROM $tblSessionRelUser s
+        INNER JOIN $tblUser u ON (u.id = s.user_id)
+        INNER JOIN $urlTable url ON (url.user_id = u.id)
+        LEFT JOIN $tblSessionRelCourseRelUser scru
+            ON (s.session_id = scru.session_id AND s.user_id = scru.user_id AND scru.c_id = $courseId)
+        WHERE
+            s.session_id = $sessionId
+            AND url.access_url_id = $urlAccessId
+            AND scru.user_id IS NULL";
+
+    $sql = getSqlFilters($sql);
+
+    $result = Database::fetch_assoc(Database::query($sql));
+
+    return (int) $result['nbr'];
+}
+
+function getRestrictedSessionUserList($from, $numberOfItems, $column, $direction): array
+{
+    $tblUser = Database::get_main_table(TABLE_MAIN_USER);
+    $tblSessionRelUser = Database::get_main_table(TABLE_MAIN_SESSION_USER);
+    $tblSessionRelCourseRelUser = Database::get_main_table(TABLE_MAIN_SESSION_COURSE_USER);
+    $urlTable = Database::get_main_table(TABLE_MAIN_ACCESS_URL_REL_USER);
+
+    $selectNames = api_is_western_name_order()
+        ? "u.firstname AS col2, u.lastname AS col3"
+        : "u.lastname AS col2, u.firstname AS col3";
+
+    $selectFields = "u.user_id AS col0, u.official_code AS col1, $selectNames, u.active AS col4, u.user_id AS col5";
+
+    if (api_get_setting('show_email_addresses') === 'true') {
+        $selectFields = "u.id AS col0, u.official_code AS col1, $selectNames, u.email AS col4, u.active AS col5, u.user_id AS col6";
+    }
+
+    $sessionId = api_get_session_id();
+    $courseId = api_get_course_int_id();
+    $urlAccessId = api_get_current_access_url_id();
+
+    $sql = "SELECT $selectFields
+        FROM $tblSessionRelUser s
+        INNER JOIN $tblUser u ON (u.id = s.user_id)
+        INNER JOIN $urlTable url ON (url.user_id = u.id)
+        LEFT JOIN $tblSessionRelCourseRelUser scru
+            ON (s.session_id = scru.session_id AND s.user_id = scru.user_id AND scru.c_id = $courseId)
+        WHERE
+            s.session_id = $sessionId
+            AND url.access_url_id = $urlAccessId
+            AND scru.user_id IS NULL";
+
+    $sql = getSqlFilters($sql);
+
+    $sql .= " ORDER BY col$column $direction LIMIT $from, $numberOfItems";
+
+    return Database::store_result(Database::query($sql));
+}
+
+function getSqlFilters(string $sql): string
+{
+    if (isset($_REQUEST['type']) && $_REQUEST['type'] == COURSEMANAGER) {
+        $sql .= " AND u.status = ".COURSEMANAGER;
+    } else {
+        $sql .= " AND u.status <> ".DRH;
+    }
+
+    if (isset($_GET['keyword']) && !empty($_GET['keyword'])) {
+        $keyword = Database::escape_string(trim($_REQUEST['keyword']));
+        $sql .= " AND (
+            u.firstname LIKE '%".$keyword."%' OR
+            u.lastname LIKE '%".$keyword."%' OR
+            u.email LIKE '%".$keyword."%' OR
+            u.username LIKE '%".$keyword."%' OR
+            u.official_code LIKE '%".$keyword."%'
+        )";
+    }
+
+    return $sql;
+}
+
 /**
  ** Get the users to display on the current page.
  */
@@ -230,7 +329,8 @@ function get_number_of_users()
     $courseCode = api_get_course_id();
     $sessionId = api_get_session_id();
 
-    if (isset($_REQUEST['type']) && $_REQUEST['type'] === 'teacher') {
+    if (isset($_REQUEST['type']) && $_REQUEST['type'] == COURSEMANAGER) {
+        $allowedRoles = implode(',', UserManager::getAllowedRolesAsTeacher());
         if (api_get_session_id() != 0) {
             $sql = "SELECT COUNT(u.id)
                     FROM $user_table u
@@ -241,7 +341,7 @@ function get_number_of_users()
                         session_id ='".$sessionId."'
                     WHERE
                         cu.user_id IS NULL AND
-                        u.status = 1 AND
+                        u.status IN ($allowedRoles) AND
                         (u.official_code <> 'ADMIN' OR u.official_code IS NULL) ";
 
             if (api_is_multiple_url_enabled()) {
@@ -259,7 +359,7 @@ function get_number_of_users()
                             WHERE
                                 cu.user_id IS NULL AND
                                 access_url_id= $url_access_id AND
-                                u.status = 1 AND
+                                u.status IN ($allowedRoles) AND
                                 (u.official_code <> 'ADMIN' OR u.official_code IS NULL)
                             ";
                 }
@@ -269,7 +369,7 @@ function get_number_of_users()
                     FROM $user_table u
                     LEFT JOIN $course_user_table cu
                     ON u.id = cu.user_id and c_id='".api_get_course_int_id()."'
-                    WHERE cu.user_id IS NULL AND u.status<>".DRH." ";
+                    WHERE cu.user_id IS NULL AND u.status IN ($allowedRoles)";
 
             if (api_is_multiple_url_enabled()) {
                 $url_access_id = api_get_current_access_url_id();
@@ -282,7 +382,7 @@ function get_number_of_users()
                         ON u.id = cu.user_id AND c_id='".api_get_course_int_id()."'
                         INNER JOIN  $tbl_url_rel_user as url_rel_user
                         ON (url_rel_user.user_id = u.id)
-                        WHERE cu.user_id IS NULL AND u.status<>".DRH." AND access_url_id= $url_access_id ";
+                        WHERE cu.user_id IS NULL AND u.status IN ($allowedRoles) AND access_url_id= $url_access_id ";
                 }
             }
         }
@@ -381,12 +481,12 @@ function get_number_of_users()
 
         // getting all the users of the course (to make sure that we do not display users that are already in the course)
         if (!empty($sessionId)) {
-            $a_course_users = CourseManager:: get_user_list_from_course_code(
+            $a_course_users = CourseManager::get_user_list_from_course_code(
                 $courseCode,
                 $sessionId
             );
         } else {
-            $a_course_users = CourseManager:: get_user_list_from_course_code(
+            $a_course_users = CourseManager::get_user_list_from_course_code(
                 $courseCode,
                 0
             );
@@ -449,6 +549,7 @@ function get_user_data($from, $number_of_items, $column, $direction)
                 u.user_id              AS col5";
     }
     if (isset($_REQUEST['type']) && $_REQUEST['type'] == COURSEMANAGER) {
+        $allowedRoles = implode(',', UserManager::getAllowedRolesAsTeacher());
         // adding a teacher through a session
         if (!empty($sessionId)) {
             $sql = "SELECT $select_fields
@@ -472,12 +573,12 @@ function get_user_data($from, $number_of_items, $column, $direction)
                         ON field_values.item_id = u.user_id
                     WHERE
                         cu.user_id IS NULL AND
-                        u.status = 1 AND
+                        u.status IN ($allowedRoles) AND
                         (u.official_code <> 'ADMIN' OR u.official_code IS NULL) AND
                         field_values.field_id = '".intval($field_identification[0])."' AND
                         field_values.value = '".Database::escape_string($field_identification[1])."'";
             } else {
-                $sql .= "WHERE cu.user_id IS NULL AND u.status=1 AND (u.official_code <> 'ADMIN' OR u.official_code IS NULL) ";
+                $sql .= "WHERE cu.user_id IS NULL AND u.status IN ($allowedRoles) AND (u.official_code <> 'ADMIN' OR u.official_code IS NULL) ";
             }
             $sql .= " AND access_url_id = $url_access_id";
         } else {
@@ -496,11 +597,11 @@ function get_user_data($from, $number_of_items, $column, $direction)
                     LEFT JOIN $table_user_field_values field_values
                         ON field_values.item_id = u.user_id
                     WHERE
-                        cu.user_id IS NULL AND u.status<>".DRH." AND
+                        cu.user_id IS NULL AND u.status IN ($allowedRoles) AND
                         field_values.field_id = '".intval($field_identification[0])."' AND
                         field_values.value = '".Database::escape_string($field_identification[1])."'";
             } else {
-                $sql .= "WHERE cu.user_id IS NULL AND u.status <> ".DRH." ";
+                $sql .= "WHERE cu.user_id IS NULL AND u.status IN ($allowedRoles) ";
             }
 
             // adding a teacher NOT trough a session on a portal with multiple URLs
@@ -524,11 +625,11 @@ function get_user_data($from, $number_of_items, $column, $direction)
                                 ON field_values.item_id = u.user_id
                             WHERE
                                 cu.user_id IS NULL AND
-                                u.status<>".DRH." AND
+                                u.status IN ($allowedRoles) AND
                                 field_values.field_id = '".intval($field_identification[0])."' AND
                                 field_values.value = '".Database::escape_string($field_identification[1])."'";
                     } else {
-                        $sql .= "WHERE cu.user_id IS NULL AND u.status <> ".DRH." AND access_url_id= $url_access_id ";
+                        $sql .= "WHERE cu.user_id IS NULL AND u.status IN ($allowedRoles) AND access_url_id= $url_access_id ";
                     }
                 }
             }
@@ -649,9 +750,9 @@ function get_user_data($from, $number_of_items, $column, $direction)
         // getting all the users of the course (to make sure that we do not
         // display users that are already in the course)
         if (!empty($sessionId)) {
-            $a_course_users = CourseManager :: get_user_list_from_course_code($course_code, $sessionId);
+            $a_course_users = CourseManager::get_user_list_from_course_code($course_code, $sessionId);
         } else {
-            $a_course_users = CourseManager :: get_user_list_from_course_code($course_code, 0);
+            $a_course_users = CourseManager::get_user_list_from_course_code($course_code, 0);
         }
         foreach ($a_course_users as $user_id => $course_user) {
             $users_of_course[] = $course_user['user_id'];
@@ -684,7 +785,7 @@ function get_user_data($from, $number_of_items, $column, $direction)
  */
 function email_filter($email)
 {
-    return Display :: encrypted_mailto_link($email, $email);
+    return Display::encrypted_mailto_link($email, $email);
 }
 /**
  * Build the reg-column of the table.

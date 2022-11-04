@@ -11,6 +11,9 @@
  * @author Roan Embrechts
  * @author Julio Montoya, Several fixes
  */
+
+use Chamilo\CoreBundle\Entity\Session;
+
 $use_anonymous = true;
 require_once __DIR__.'/../inc/global.inc.php';
 $current_course_tool = TOOL_USER;
@@ -247,7 +250,7 @@ if (isset($_GET['action'])) {
                 $rs = Database::query($sql);
                 $counter = 1;
 
-                while ($user = Database:: fetch_array($rs, 'ASSOC')) {
+                while ($user = Database::fetch_array($rs, 'ASSOC')) {
                     if (isset($user['legal_agreement'])) {
                         if ($user['legal_agreement'] == 1) {
                             $user['legal_agreement'] = get_lang('Yes');
@@ -683,43 +686,26 @@ function get_number_of_users()
         $status = $type;
     } else {
         if ($type == COURSEMANAGER) {
-            $status = 2;
+            $status = Session::COACH;
         } else {
-            $status = 0;
+            $status = Session::STUDENT;
         }
     }
 
-    if (!empty($sessionId)) {
-        $users = CourseManager::get_user_list_from_course_code(
-            $courseCode,
-            $sessionId,
-            null,
-            null,
-            $status,
-            null,
-            false,
-            false,
-            null,
-            null,
-            null,
-            $active
-        );
-    } else {
-        $users = CourseManager::get_user_list_from_course_code(
-            $courseCode,
-            0,
-            null,
-            null,
-            $status,
-            null,
-            false,
-            false,
-            null,
-            null,
-            null,
-            $active
-        );
-    }
+    $users = CourseManager::get_user_list_from_course_code(
+        $courseCode,
+        $sessionId,
+        null,
+        null,
+        $status,
+        null,
+        false,
+        false,
+        null,
+        null,
+        null,
+        $active
+    );
 
     foreach ($users as $user) {
         if ((
@@ -836,7 +822,7 @@ function get_user_data($from, $number_of_items, $column, $direction)
         }
     }
 
-    $users = CourseManager :: get_user_list_from_course_code(
+    $users = CourseManager::get_user_list_from_course_code(
         $course_code,
         $sessionId,
         $limit,

@@ -4,6 +4,7 @@
 
 use Chamilo\CoreBundle\Component\Utils\ChamiloApi;
 use Chamilo\CoreBundle\Entity\TrackEExercises;
+use Chamilo\CourseBundle\Entity\CQuizQuestion;
 use ChamiloSession as Session;
 
 /**
@@ -74,6 +75,7 @@ class ExerciseLib
         $pictureName = $objQuestionTmp->getPictureFilename();
         $s = '';
         if ($answerType != HOT_SPOT &&
+            $answerType != HOT_SPOT_GLOBAL &&
             $answerType != HOT_SPOT_DELINEATION &&
             $answerType != ANNOTATION
         ) {
@@ -84,7 +86,7 @@ class ExerciseLib
                     if ($exercise->display_category_name) {
                         TestCategory::displayCategoryAndTitle($objQuestionTmp->iid);
                     }
-                    $titleToDisplay = Security::remove_XSS($objQuestionTmp->getTitleToDisplay($current_item));
+                    $titleToDisplay = Security::remove_XSS($objQuestionTmp->getTitleToDisplay($current_item, $exerciseId));
                     if ($answerType == READING_COMPREHENSION) {
                         // In READING_COMPREHENSION, the title of the question
                         // contains the question itself, which can only be
@@ -120,6 +122,11 @@ class ExerciseLib
             $objAnswerTmp = new Answer($questionId, $course_id, $exercise);
             $nbrAnswers = $objAnswerTmp->selectNbrAnswers();
             $quizQuestionOptions = Question::readQuestionOption($questionId, $course_id);
+            $selectableOptions = [];
+
+            for ($i = 1; $i <= $objAnswerTmp->nbrAnswers; $i++) {
+                $selectableOptions[$objAnswerTmp->iid[$i]] = $objAnswerTmp->answer[$i];
+            }
 
             // For "matching" type here, we need something a little bit special
             // because the match between the suggestions and the answers cannot be
@@ -132,7 +139,9 @@ class ExerciseLib
             $num_suggestions = 0;
             switch ($answerType) {
                 case MATCHING:
+                case MATCHING_GLOBAL:
                 case DRAGGABLE:
+                case MATCHING_DRAGGABLE_GLOBAL:
                 case MATCHING_DRAGGABLE:
                     if ($answerType == DRAGGABLE) {
                         $isVertical = $objQuestionTmp->extra == 'v';
@@ -215,8 +224,20 @@ class ExerciseLib
                         '#',
                         ['enctype' => 'multipart/form-data']
                     );
+                    $iconDelete = Display::return_icon('delete.png', get_lang('Delete'), [], ICON_SIZE_SMALL);
                     $multipleForm->addMultipleUpload($url);
                     $s .= '<script>
+                        function setRemoveLink(dataContext) {
+                            var removeLink = $("<a>", {
+                                html: "&nbsp;'.addslashes($iconDelete).'",
+                                href: "#",
+                                click: function(e) {
+                                  e.preventDefault();
+                                  dataContext.parent().remove();
+                                }
+                            });
+                            dataContext.append(removeLink);
+                        }
                         $(function() {
                             $("#input_file_upload").bind("fileuploaddone", function (e, data) {
                                 $.each(data.result.files, function (index, file) {
@@ -225,8 +246,10 @@ class ExerciseLib
                                             type: "hidden",
                                             name: "uploadChoice['.$questionId.'][]",
                                             value: file.name
-                                        })
+                                        });
                                         $(data.context.children()[index]).parent().append(input);
+                                        // set the remove link
+                                        setRemoveLink($(data.context.children()[index]).parent());
                                     }
                                 });
                             });
@@ -235,17 +258,25 @@ class ExerciseLib
                     // Set default values
                     if (!empty($answer)) {
                         $userWebpath = UserManager::getUserPathById(api_get_user_id(), 'web').'my_files'.'/upload_answer/'.$exe_id.'/'.$questionId.'/';
+                        $userSyspath = UserManager::getUserPathById(api_get_user_id(), 'system').'my_files'.'/upload_answer/'.$exe_id.'/'.$questionId.'/';
                         $filesNames = explode('|', $answer);
                         $icon = Display::return_icon('file_txt.gif');
                         $default = '';
                         foreach ($filesNames as $fileName) {
                             $fileName = Security::remove_XSS($fileName);
-                            $default .= '<a target="_blank" class="panel-image" href="'.$userWebpath.$fileName.'"><div class="row"><div class="col-sm-4">'.$icon.'</div><div class="col-sm-5 file_name">'.$fileName.'</div><input type="hidden" name="uploadChoice['.$questionId.'][]" value="'.$fileName.'"></div></a>';
+                            if (file_exists($userSyspath.$fileName)) {
+                                $default .= '<a target="_blank" class="panel-image" href="'.$userWebpath.$fileName.'"><div class="row"><div class="col-sm-4">'.$icon.'</div><div class="col-sm-5 file_name">'.$fileName.'</div><input type="hidden" name="uploadChoice['.$questionId.'][]" value="'.$fileName.'"><div class="col-sm-3"></div></div></a>';
+                            }
                         }
                         $s .= '<script>
                             $(function() {
                                 if ($("#files").length > 0) {
-                                  $("#files").html("'.addslashes($default).'");
+                                    $("#files").html("'.addslashes($default).'");
+                                    var links = $("#files").children();
+                                    links.each(function(index) {
+                                        var dataContext = $(links[index]).find(".row");
+                                        setRemoveLink(dataContext);
+                                    });
                                 }
                             });
                         </script>';
@@ -275,7 +306,27 @@ class ExerciseLib
 
                         echo $objQuestionTmp->returnRecorder();
                     }
-
+                    $fileUrl = $objQuestionTmp->getFileUrl();
+                    if (isset($fileUrl)) {
+                        $s .= '
+                            <div class="col-sm-4 col-sm-offset-4">
+                                <div class="form-group text-center">
+                                    <audio src="'.$fileUrl.'" controls id="record-preview-'.$questionId.'-previous"></audio>
+                                </div>
+                            </div>
+                        ';
+                    }
+                    $s .= '<script>
+                        // The buttons are blocked waiting for the audio file to be uploaded
+                        $(document).ajaxStart(function() {
+                            $("button").attr("disabled", true);
+                            $("button").attr("title", "'.get_lang('WaitingForTheAudioFileToBeUploaded').'");
+                        });
+                        $(document).ajaxComplete(function() {
+                            $("button").attr("disabled", false);
+                            $("button").removeAttr("title");
+                        });
+                    </script>';
                     $form = new FormValidator('free_choice_'.$questionId);
                     $config = ['ToolbarSet' => 'TestFreeAnswer'];
 
@@ -289,6 +340,18 @@ class ExerciseLib
                     );
                     $form->addHtml('</div>');
                     $s .= $form->returnForm();
+                    break;
+                case MULTIPLE_ANSWER_DROPDOWN:
+                case MULTIPLE_ANSWER_DROPDOWN_GLOBAL:
+                    if ($debug_mark_answer) {
+                        $s .= '<p><strong>'
+                            .(
+                                MULTIPLE_ANSWER_DROPDOWN == $answerType
+                                    ? '<span class="pull-right">'.get_lang('Weighting').'</span>'
+                                    : ''
+                            )
+                            .get_lang('CorrectAnswer').'</strong></p>';
+                    }
                     break;
             }
 
@@ -904,6 +967,7 @@ class ExerciseLib
                         $s .= '</tr>';
                         break;
                     case FILL_IN_BLANKS:
+                    case FILL_IN_BLANKS_GLOBAL:
                         // display the question, with field empty, for student to fill it,
                         // or filled to display the answer in the Question preview of the exercise/admin.php page
                         $displayForStudent = true;
@@ -1134,6 +1198,7 @@ class ExerciseLib
                         }
                         break;
                     case MATCHING:
+                    case MATCHING_GLOBAL:
                         // matching type, showing suggestions and answers
                         // TODO: replace $answerId by $numAnswer
                         if ($answerCorrect != 0) {
@@ -1293,6 +1358,7 @@ class ExerciseLib
                             $s .= '</li>';
                         }
                         break;
+                    case MATCHING_DRAGGABLE_GLOBAL:
                     case MATCHING_DRAGGABLE:
                         if ($answerId == 1) {
                             echo $objAnswerTmp->getJs();
@@ -1402,16 +1468,77 @@ HTML;
                             $matching_correct_answer++;
                         }
                         break;
+                    case MULTIPLE_ANSWER_DROPDOWN:
+                    case MULTIPLE_ANSWER_DROPDOWN_GLOBAL:
+                        if ($debug_mark_answer && $answerCorrect) {
+                            $s .= '<p>'
+                                .(
+                                    MULTIPLE_ANSWER_DROPDOWN == $answerType
+                                        ? '<span class="pull-right">'.$objAnswerTmp->weighting[$answerId].'</span>'
+                                        : ''
+                                )
+                                .Display::returnFontAwesomeIcon('check-square-o', '', true);
+                            $s .= Security::remove_XSS($objAnswerTmp->answer[$answerId]).'</p>';
+                        }
+                        break;
                 }
             }
 
+            if (in_array($answerType, [MULTIPLE_ANSWER_DROPDOWN, MULTIPLE_ANSWER_DROPDOWN_GLOBAL])
+                && !$debug_mark_answer
+            ) {
+                $userChoiceList = array_unique($userChoiceList);
+                $input_id = "choice-$questionId";
+
+                $s .= Display::input('hidden', "choice2[$questionId]", '0')
+                    .'<p>'
+                    .Display::select(
+                        "choice[$questionId][]",
+                        $selectableOptions,
+                        $userChoiceList,
+                        [
+                            'id' => $input_id,
+                            'multiple' => 'multiple',
+                        ],
+                        false
+                    )
+                    .'</p>'
+                    .'<script>$(function () {
+                            $(\'#'.$input_id.'\').select2({
+                                selectOnClose: false,
+                                placeholder: {id: -2, text: "'.get_lang('None').'"}
+                            });
+                        });</script>'
+                    .'<style>
+                        .select2-container--default .select2-selection--multiple .select2-selection__rendered li {
+                            display:block;
+                            width: 100%;
+                            white-space: break-spaces;
+                        }</style>'
+                ;
+            }
+
             if ($show_comment) {
-                $s .= '</table>';
+                if (in_array(
+                    $answerType,
+                    [
+                        MULTIPLE_ANSWER,
+                        MULTIPLE_ANSWER_COMBINATION,
+                        UNIQUE_ANSWER,
+                        UNIQUE_ANSWER_IMAGE,
+                        UNIQUE_ANSWER_NO_OPTION,
+                        GLOBAL_MULTIPLE_ANSWER,
+                    ]
+                )) {
+                    $s .= '</table>';
+                }
             } elseif (in_array(
                 $answerType,
                 [
                     MATCHING,
+                    MATCHING_GLOBAL,
                     MATCHING_DRAGGABLE,
+                    MATCHING_DRAGGABLE_GLOBAL,
                     UNIQUE_ANSWER_NO_OPTION,
                     MULTIPLE_ANSWER_TRUE_FALSE,
                     MULTIPLE_ANSWER_COMBINATION_TRUE_FALSE,
@@ -1453,7 +1580,7 @@ HTML;
 //                $s .= '</div>';
             }
 
-            if (in_array($answerType, [MATCHING, MATCHING_DRAGGABLE])) {
+            if (in_array($answerType, [MATCHING, MATCHING_GLOBAL, MATCHING_DRAGGABLE, MATCHING_DRAGGABLE_GLOBAL])) {
                 $s .= '</div>'; //drag_question
             }
 
@@ -1467,7 +1594,7 @@ HTML;
                 return $s;
             }
             echo $s;
-        } elseif ($answerType == HOT_SPOT || $answerType == HOT_SPOT_DELINEATION) {
+        } elseif (in_array($answerType, [HOT_SPOT, HOT_SPOT_DELINEATION, HOT_SPOT_GLOBAL])) {
             global $exe_id;
             // Question is a HOT_SPOT
             // Checking document/images visibility
@@ -1547,7 +1674,7 @@ HTML;
                         </div>
                     </div>
                     <script>
-                        new ".($answerType == HOT_SPOT ? "HotspotQuestion" : "DelineationQuestion")."({
+                        new ".(in_array($answerType, [HOT_SPOT, HOT_SPOT_GLOBAL]) ? "HotspotQuestion" : "DelineationQuestion")."({
                             questionId: $questionId,
                             exerciseId: {$exercise->iid},
                             exeId: 0,
@@ -1566,7 +1693,7 @@ HTML;
                     if ($exercise->display_category_name) {
                         TestCategory::displayCategoryAndTitle($objQuestionTmp->iid);
                     }
-                    echo $objQuestionTmp->getTitleToDisplay($current_item);
+                    echo $objQuestionTmp->getTitleToDisplay($current_item, $exerciseId);
                 }
 
                 if ($questionRequireAuth) {
@@ -1644,7 +1771,7 @@ HOTSPOT;
                     if ($exercise->display_category_name) {
                         TestCategory::displayCategoryAndTitle($objQuestionTmp->iid);
                     }
-                    echo $objQuestionTmp->getTitleToDisplay($current_item);
+                    echo $objQuestionTmp->getTitleToDisplay($current_item, $exerciseId);
                 }
 
                 if ($questionRequireAuth) {
@@ -1661,39 +1788,55 @@ HOTSPOT;
                             <div class="col-sm-8 col-md-9">
                                 <div id="annotation-canvas-'.$questionId.'" class="annotation-canvas center-block">
                                 </div>
-                                <script>
-                                    AnnotationQuestion({
-                                        questionId: '.$questionId.',
-                                        exerciseId: '.$exerciseId.',
-                                        relPath: \''.$relPath.'\',
-                                        courseId: '.$course_id.',
-                                    });
-                                </script>
                             </div>
-                            <div class="col-sm-4 col-md-3">
-                                <div class="well well-sm" id="annotation-toolbar-'.$questionId.'">
-                                    <div class="btn-toolbar">
-                                        <div class="btn-group" data-toggle="buttons">
-                                            <label class="btn btn-default active"
-                                                aria-label="'.get_lang('AddAnnotationPath').'">
-                                                <input
-                                                    type="radio" value="0"
-                                                    name="'.$questionId.'-options" autocomplete="off" checked>
-                                                <span class="fa fa-pencil" aria-hidden="true"></span>
-                                            </label>
-                                            <label class="btn btn-default"
-                                                aria-label="'.get_lang('AddAnnotationText').'">
-                                                <input
-                                                    type="radio" value="1"
-                                                    name="'.$questionId.'-options" autocomplete="off">
-                                                <span class="fa fa-font fa-fw" aria-hidden="true"></span>
-                                            </label>
-                                        </div>
+                            <div class="col-sm-4 col-md-3" id="annotation-toolbar-'.$questionId.'">
+                                <div class="btn-toolbar" style="margin-top: 0;">
+                                    <div class="btn-group" data-toggle="buttons">
+                                        <label class="btn btn-default active"
+                                            aria-label="'.get_lang('AddAnnotationPath').'">
+                                            <input
+                                                type="radio" value="0"
+                                                name="'.$questionId.'-options" autocomplete="off" checked>
+                                            <span class="fa fa-pencil" aria-hidden="true"></span>
+                                        </label>
+                                        <label class="btn btn-default"
+                                            aria-label="'.get_lang('AddAnnotationText').'">
+                                            <input
+                                                type="radio" value="1"
+                                                name="'.$questionId.'-options" autocomplete="off">
+                                            <span class="fa fa-font fa-fw" aria-hidden="true"></span>
+                                        </label>
                                     </div>
-                                    <ul class="list-unstyled"></ul>
+                                    <div class="btn-group">
+                                        <button type="button" class="btn btn-default btn-small"
+                                            title="'.get_lang('ClearAnswers').'"
+                                            id="btn-reset-'.$questionId.'">
+                                            <span class="fa fa-times-rectangle fa-fw" aria-hidden="true"></span>
+                                        </button>
+                                    </div>
+                                    <div class="btn-group">
+                                        <button type="button" class="btn btn-default"
+                                            title="'.get_lang('Undo').'"
+                                            id="btn-undo-'.$questionId.'">
+                                            <span class="fa fa-undo fa-fw" aria-hidden="true"></span>
+                                        </button>
+                                        <button type="button" class="btn btn-default"
+                                            title="'.get_lang('Redo').'"
+                                            id="btn-redo-'.$questionId.'">
+                                            <span class="fa fa-repeat fa-fw" aria-hidden="true"></span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
+                        <script>
+                            AnnotationQuestion({
+                                questionId: '.$questionId.',
+                                exerciseId: '.$exe_id.',
+                                relPath: \''.$relPath.'\',
+                                courseId: '.$course_id.',
+                            });
+                        </script>
                     </div>
                 ';
             }
@@ -2122,6 +2265,108 @@ HOTSPOT;
     }
 
     /**
+     * Export the pending attempts to excel.
+     *
+     * @params $values
+     */
+    public static function exportPendingAttemptsToExcel($values)
+    {
+        $headers = [
+            get_lang('Course'),
+            get_lang('Exercise'),
+            get_lang('FirstName'),
+            get_lang('LastName'),
+            get_lang('LoginName'),
+            get_lang('Duration').' ('.get_lang('MinMinute').')',
+            get_lang('StartDate'),
+            get_lang('EndDate'),
+            get_lang('Score'),
+            get_lang('IP'),
+            get_lang('Status'),
+            get_lang('Corrector'),
+            get_lang('CorrectionDate'),
+        ];
+        $tableXls[] = $headers;
+
+        $courseId = $values['course_id'] ?? 0;
+        $exerciseId = $values['exercise_id'] ?? 0;
+        $status = $values['status'] ?? 0;
+        $whereCondition = '';
+        if (isset($_GET['filter_by_user']) && !empty($_GET['filter_by_user'])) {
+            $filter_user = (int) $_GET['filter_by_user'];
+            if (empty($whereCondition)) {
+                $whereCondition .= " te.exe_user_id  = '$filter_user'";
+            } else {
+                $whereCondition .= " AND te.exe_user_id  = '$filter_user'";
+            }
+        }
+
+        if (isset($_GET['group_id_in_toolbar']) && !empty($_GET['group_id_in_toolbar'])) {
+            $groupIdFromToolbar = (int) $_GET['group_id_in_toolbar'];
+            if (!empty($groupIdFromToolbar)) {
+                if (empty($whereCondition)) {
+                    $whereCondition .= " te.group_id  = '$groupIdFromToolbar'";
+                } else {
+                    $whereCondition .= " AND group_id  = '$groupIdFromToolbar'";
+                }
+            }
+        }
+
+        if (!empty($whereCondition)) {
+            $whereCondition = " AND $whereCondition";
+        }
+
+        if (!empty($courseId)) {
+            $whereCondition .= " AND te.c_id = $courseId";
+        }
+
+        $result = ExerciseLib::get_exam_results_data(
+            0,
+            10000000,
+            'c_id',
+            'asc',
+            $exerciseId,
+            $whereCondition,
+            false,
+            null,
+            false,
+            false,
+            [],
+            false,
+            false,
+            false,
+            true,
+            $status
+        );
+
+        if (!empty($result)) {
+            foreach ($result as $attempt) {
+                $data = [
+                    $attempt['course'],
+                    $attempt['exercise'],
+                    $attempt['firstname'],
+                    $attempt['lastname'],
+                    $attempt['username'],
+                    $attempt['exe_duration'],
+                    $attempt['start_date'],
+                    $attempt['exe_date'],
+                    strip_tags($attempt['score']),
+                    $attempt['user_ip'],
+                    strip_tags($attempt['status']),
+                    $attempt['qualificator_fullname'],
+                    $attempt['date_of_qualification'],
+                ];
+                $tableXls[] = $data;
+            }
+        }
+
+        $fileName = get_lang('PendingAttempts').'_'.api_get_local_time();
+        Export::arrayToXls($tableXls, $fileName);
+
+        return true;
+    }
+
+    /**
      * Gets exercise results.
      *
      * @todo this function should be moved in a library  + no global calls
@@ -2241,6 +2486,21 @@ HOTSPOT;
             $sessionCondition = '';
         }
 
+        $showAttemptsInSessions = api_get_configuration_value('show_exercise_attempts_in_all_user_sessions');
+        if ($showAttemptsInSessions) {
+            $sessions = SessionManager::get_sessions_by_general_coach(api_get_user_id());
+            if (!empty($sessions)) {
+                $sessionIds = [];
+                foreach ($sessions as $session) {
+                    $sessionIds[] = $session['id'];
+                }
+                $session_id_and = " AND te.session_id IN(".implode(',', $sessionIds).")";
+                $sessionCondition = " AND ttte.session_id IN(".implode(',', $sessionIds).")";
+            } else {
+                return false;
+            }
+        }
+
         $exercise_where = '';
         $exerciseFilter = '';
         if (!empty($exercise_id)) {
@@ -2257,7 +2517,7 @@ HOTSPOT;
         // sql for chamilo-type tests for teacher / tutor view
         $sql_inner_join_tbl_track_exercices = "
         (
-            SELECT DISTINCT ttte.*, if(tr.exe_id,1, 0) as revised
+            SELECT DISTINCT ttte.*, if(tr.exe_id,1, 0) as revised, tr.author as corrector, MAX(tr.insert_date) as correction_date
             FROM $TBL_TRACK_EXERCICES ttte
             LEFT JOIN $TBL_TRACK_ATTEMPT_RECORDING tr
             ON (ttte.exe_id = tr.exe_id)
@@ -2265,6 +2525,7 @@ HOTSPOT;
                 $courseCondition
                 $exerciseFilter
                 $sessionCondition
+            GROUP BY ttte.exe_id
         )";
 
         if ($is_allowedToEdit) {
@@ -2402,7 +2663,9 @@ HOTSPOT;
                     group_name,
                     group_id,
                     orig_lp_id,
-                    te.user_ip";
+                    te.user_ip,
+                    corrector,
+                    correction_date";
             }
 
             $sql = " $sql_select
@@ -2479,6 +2742,7 @@ HOTSPOT;
             $thousandSeparator = '';
         }
 
+        $hideIp = api_get_configuration_value('exercise_hide_ip');
         $listInfo = [];
         // Simple exercises
         if (empty($hotpotatoe_where)) {
@@ -2566,6 +2830,21 @@ HOTSPOT;
                                 $revised = 2; // mark as "unclosed"
                             }
                         }
+                    }
+
+                    if (4 == $status && 2 != $revised) {
+                        // Filter by status "unclosed"
+                        continue;
+                    }
+
+                    if (5 == $status && 3 != $revised) {
+                        // Filter by status "ongoing"
+                        continue;
+                    }
+
+                    if (3 == $status && in_array($revised, [1, 2, 3])) {
+                        // Filter by status "not validated"
+                        continue;
                     }
 
                     if ($from_gradebook && ($is_allowedToEdit)) {
@@ -2660,7 +2939,7 @@ HOTSPOT;
                             switch ($revised) {
                                 case 0:
                                     $actions .= "<a href='exercise_show.php?".$cidReq."&action=qualify&id=$id'>".
-                                        Display:: return_icon(
+                                        Display::return_icon(
                                             'quiz.png',
                                             get_lang('Qualify')
                                         );
@@ -2672,7 +2951,7 @@ HOTSPOT;
                                     break;
                                 case 1:
                                     $actions .= "<a href='exercise_show.php?".$cidReq."&action=edit&id=$id'>".
-                                        Display:: return_icon(
+                                        Display::return_icon(
                                             'edit.png',
                                             get_lang('Edit'),
                                             [],
@@ -2690,7 +2969,7 @@ HOTSPOT;
                                         .'&exerciseId='.$exercise_id
                                         .'&a=close&id='.$id
                                         .'">'.
-                                        Display:: return_icon(
+                                        Display::return_icon(
                                             'lock.png',
                                             get_lang('MarkAttemptAsClosed'),
                                             [],
@@ -2703,7 +2982,7 @@ HOTSPOT;
                                     );
                                     break;
                                 case 3: //still ongoing
-                                    $actions .= Display:: return_icon(
+                                    $actions .= Display::return_icon(
                                         'clock.png',
                                         get_lang('AttemptStillOngoingPleaseWait'),
                                         [],
@@ -2719,7 +2998,7 @@ HOTSPOT;
 
                             if ($filter == 2) {
                                 $actions .= ' <a href="exercise_history.php?'.$cidReq.'&exe_id='.$id.'">'.
-                                    Display:: return_icon(
+                                    Display::return_icon(
                                         'history.png',
                                         get_lang('ViewHistoryChange')
                                     ).'</a>';
@@ -2926,6 +3205,15 @@ HOTSPOT;
                             $attempt['session_access_start_date'] = $sessionStartAccessDate;
                             $attempt['status'] = $revisedLabel;
                             $attempt['score'] = $score;
+                            $attempt['qualificator_fullname'] = '';
+                            $attempt['date_of_qualification'] = '';
+                            if (!empty($attempt['corrector'])) {
+                                $qualificatorAuthor = api_get_user_info($attempt['corrector']);
+                                $attempt['qualificator_fullname'] = api_get_person_name($qualificatorAuthor['firstname'], $qualificatorAuthor['lastname']);
+                            }
+                            if (!empty($attempt['correction_date'])) {
+                                $attempt['date_of_qualification'] = api_convert_and_format_date($attempt['correction_date'], DATE_TIME_FORMAT_SHORT);
+                            }
                             $attempt['score_percentage'] = self::show_score(
                                 $my_res,
                                 $my_total,
@@ -2976,11 +3264,17 @@ HOTSPOT;
                             $attempt['total'] = $onlyTotal;
                             $attempt['lp'] = $lp_name;
                             $attempt['actions'] = $actions;
+                            if ($hideIp && isset($attempt['user_ip'])) {
+                                unset($attempt['user_ip']);
+                            }
                             $listInfo[] = $attempt;
                         } else {
                             $attempt['status'] = $revisedLabel;
                             $attempt['score'] = $score;
                             $attempt['actions'] = $actions;
+                            if ($hideIp && isset($attempt['user_ip'])) {
+                                unset($attempt['user_ip']);
+                            }
                             $listInfo[] = $attempt;
                         }
                     }
@@ -3619,7 +3913,8 @@ EOT;
         $course_code,
         $session_id = 0,
         $user_list = [],
-        $return_string = true
+        $return_string = true,
+        $skipLpResults = true
     ) {
         //No score given we return
         if (is_null($my_score)) {
@@ -3636,7 +3931,8 @@ EOT;
                 $user_id,
                 $exercise_id,
                 $course_code,
-                $session_id
+                $session_id,
+                $skipLpResults
             );
         }
 
@@ -3774,13 +4070,16 @@ EOT;
      *
      * @return array
      */
-    public static function get_best_attempt_in_course($exercise_id, $courseId, $session_id)
+    public static function get_best_attempt_in_course($exercise_id, $courseId, $session_id, $skipLpResults = true)
     {
         $user_results = Event::get_all_exercise_results(
             $exercise_id,
             $courseId,
             $session_id,
-            false
+            false,
+            null,
+            0,
+            $skipLpResults
         );
 
         $best_score_data = [];
@@ -3816,14 +4115,17 @@ EOT;
         $user_id,
         $exercise_id,
         $courseId,
-        $session_id
+        $session_id,
+        $skipLpResults = true
     ) {
         $user_results = Event::get_all_exercise_results(
             $exercise_id,
             $courseId,
             $session_id,
             false,
-            $user_id
+            $user_id,
+            0,
+            $skipLpResults
         );
         $best_score_data = [];
         $best_score = 0;
@@ -4189,7 +4491,7 @@ EOT;
         $courseId = api_get_course_int_id($course_code);
         $session_id = intval($session_id);
 
-        if ($questionType == FILL_IN_BLANKS) {
+        if (in_array($questionType, [FILL_IN_BLANKS, FILL_IN_BLANKS_GLOBAL])) {
             $listStudentsId = [];
             $listAllStudentInfo = CourseManager::get_student_list_from_course_code(
                 api_get_course_id(),
@@ -4218,7 +4520,7 @@ EOT;
         } else {
             $courseCondition = "
             INNER JOIN $courseUserSession cu
-            ON cu.c_id = c.id AND cu.user_id = exe_user_id";
+            ON (cu.c_id = c.id AND cu.user_id = e.exe_user_id AND e.session_id = cu.session_id)";
             $courseConditionWhere = " AND cu.status = 0 ";
         }
 
@@ -4289,7 +4591,7 @@ EOT;
         } else {
             $courseCondition = "
             INNER JOIN $courseUserSession cu
-            ON cu.c_id = c.id AND cu.user_id = exe_user_id";
+            ON (cu.c_id = c.id AND cu.user_id = e.exe_user_id AND e.session_id = cu.session_id)";
             $courseConditionWhere = ' AND cu.status = 0 ';
         }
 
@@ -4356,11 +4658,14 @@ EOT;
 
         switch ($question_type) {
             case FILL_IN_BLANKS:
+            case FILL_IN_BLANKS_GLOBAL:
                 $answer_condition = '';
                 $select_condition = ' e.exe_id, answer ';
                 break;
             case MATCHING:
+            case MATCHING_GLOBAL:
             case MATCHING_DRAGGABLE:
+            case MATCHING_DRAGGABLE_GLOBAL:
             default:
                 $answer_condition = " answer = $answer_id AND ";
                 $select_condition = ' DISTINCT exe_user_id ';
@@ -4374,7 +4679,7 @@ EOT;
         } else {
             $courseCondition = "
             INNER JOIN $courseUserSession cu
-            ON cu.c_id = a.c_id AND cu.user_id = exe_user_id";
+            ON (cu.c_id = a.c_id AND cu.user_id = e.exe_user_id AND e.session_id = cu.session_id)";
             $courseConditionWhere = ' AND cu.status = 0 ';
         }
 
@@ -4404,6 +4709,7 @@ EOT;
             $good_answers = 0;
             switch ($question_type) {
                 case FILL_IN_BLANKS:
+                case FILL_IN_BLANKS_GLOBAL:
                     while ($row = Database::fetch_array($result, 'ASSOC')) {
                         $fill_blank = self::check_fill_in_blanks(
                             $correct_answer,
@@ -4418,7 +4724,9 @@ EOT;
                     return $good_answers;
                     break;
                 case MATCHING:
+                case MATCHING_GLOBAL:
                 case MATCHING_DRAGGABLE:
+                case MATCHING_DRAGGABLE_GLOBAL:
                 default:
                     $return = Database::num_rows($result);
             }
@@ -4562,32 +4870,34 @@ EOT;
     }
 
     /**
-     * @param int    $exercise_id
-     * @param string $course_code
-     * @param int    $session_id
+     * It gets the number of users who finishing the exercise.
+     *
+     * @param int $exerciseId
+     * @param int $courseId
+     * @param int $sessionId
      *
      * @return int
      */
-    public static function get_number_students_finish_exercise(
-        $exercise_id,
-        $course_code,
-        $session_id
+    public static function getNumberStudentsFinishExercise(
+        $exerciseId,
+        $courseId,
+        $sessionId
     ) {
-        $track_exercises = Database::get_main_table(TABLE_STATISTIC_TRACK_E_EXERCISES);
-        $track_attempt = Database::get_main_table(TABLE_STATISTIC_TRACK_E_ATTEMPT);
+        $tblTrackExercises = Database::get_main_table(TABLE_STATISTIC_TRACK_E_EXERCISES);
+        $tblTrackAttempt = Database::get_main_table(TABLE_STATISTIC_TRACK_E_ATTEMPT);
 
-        $exercise_id = (int) $exercise_id;
-        $course_code = Database::escape_string($course_code);
-        $session_id = (int) $session_id;
+        $exerciseId = (int) $exerciseId;
+        $courseId = (int) $courseId;
+        $sessionId = (int) $sessionId;
 
         $sql = "SELECT DISTINCT exe_user_id
-                FROM $track_exercises e
-                INNER JOIN $track_attempt a
+                FROM $tblTrackExercises e
+                INNER JOIN $tblTrackAttempt a
                 ON (a.exe_id = e.exe_id)
                 WHERE
-                    exe_exo_id 	 = $exercise_id AND
-                    course_code  = '$course_code' AND
-                    e.session_id = $session_id AND
+                    exe_exo_id 	 = $exerciseId AND
+                    e.c_id  = $courseId AND
+                    e.session_id = $sessionId AND
                     status = ''";
         $result = Database::query($sql);
         $return = 0;
@@ -4880,7 +5190,13 @@ EOT;
         }
 
         // Display text when test is finished #4074 and for LP #4227
-        $endOfMessage = Security::remove_XSS($objExercise->getTextWhenFinished());
+        // Allows to do a remove_XSS for end text result of exercise with
+        // user status COURSEMANAGERLOWSECURITY BT#20194
+        if (true === api_get_configuration_value('exercise_result_end_text_html_strict_filtering')) {
+            $endOfMessage = Security::remove_XSS($objExercise->getTextWhenFinished(), COURSEMANAGERLOWSECURITY);
+        } else {
+            $endOfMessage = Security::remove_XSS($objExercise->getTextWhenFinished());
+        }
         if (!empty($endOfMessage)) {
             echo Display::div(
                 $endOfMessage,
@@ -4942,8 +5258,8 @@ EOT;
                     continue;
                 }
 
-                $total_score += $result['score'];
-                $total_weight += $result['weight'];
+                $total_score += (float) $result['score'];
+                $total_weight += (float) $result['weight'];
 
                 $question_list_answers[] = [
                     'question' => $result['open_question'],
@@ -5314,6 +5630,89 @@ EOT;
             'total_percentage' => $percentage,
             'count_pending_questions' => $countPendingQuestions,
         ];
+    }
+
+    /**
+     * It validates unique score when all user answers are correct by question.
+     * It is used for global questions.
+     *
+     * @param       $answerType
+     * @param       $listCorrectAnswers
+     * @param       $exeId
+     * @param       $questionId
+     * @param       $questionWeighting
+     * @param array $choice
+     * @param int   $nbrAnswers
+     *
+     * @return int|mixed
+     */
+    public static function getUserQuestionScoreGlobal(
+        $answerType,
+        $listCorrectAnswers,
+        $exeId,
+        $questionId,
+        $questionWeighting,
+        $choice = [],
+        $nbrAnswers = 0
+    ) {
+        $nbrCorrect = 0;
+        $nbrOptions = 0;
+        switch ($answerType) {
+            case FILL_IN_BLANKS_GLOBAL:
+                if (!empty($listCorrectAnswers)) {
+                    foreach ($listCorrectAnswers['student_score'] as $idx => $val) {
+                        if (1 === (int) $val) {
+                            $nbrCorrect++;
+                        }
+                    }
+                    $nbrOptions = (int) $listCorrectAnswers['words_count'];
+                }
+                break;
+            case HOT_SPOT_GLOBAL:
+                if (!empty($listCorrectAnswers)) {
+                    foreach ($listCorrectAnswers as $idx => $val) {
+                        if (1 === (int) $choice[$idx]) {
+                            $nbrCorrect++;
+                        }
+                    }
+                } else {
+                    // We get the user answers from database
+                    $TBL_TRACK_HOTSPOT = Database::get_main_table(TABLE_STATISTIC_TRACK_E_HOTSPOT);
+                    $sql = "SELECT count(hotspot_id) as ct
+                                FROM $TBL_TRACK_HOTSPOT
+                                WHERE
+                                    hotspot_exe_id = '".Database::escape_string($exeId)."' AND
+                                    hotspot_question_id = '".Database::escape_string($questionId)."' AND
+                                    hotspot_correct = 1";
+                    $result = Database::query($sql);
+                    $nbrCorrect = (int) Database::result($result, 0, 0);
+                }
+                $nbrOptions = $nbrAnswers;
+                break;
+            case MATCHING_GLOBAL:
+            case MATCHING_DRAGGABLE_GLOBAL:
+                if (isset($listCorrectAnswers['form_values'])) {
+                    if (isset($listCorrectAnswers['form_values']['correct'])) {
+                        $nbrCorrect = count($listCorrectAnswers['form_values']['correct']);
+                        $nbrOptions = (int) $listCorrectAnswers['form_values']['count_options'];
+                    }
+                } else {
+                    if (isset($listCorrectAnswers['from_database'])) {
+                        if (isset($listCorrectAnswers['from_database']['correct'])) {
+                            $nbrCorrect = count($listCorrectAnswers['from_database']['correct']);
+                            $nbrOptions = (int) $listCorrectAnswers['from_database']['count_options'];
+                        }
+                    }
+                }
+                break;
+        }
+
+        $questionScore = 0;
+        if ($nbrCorrect > 0 && $nbrCorrect == $nbrOptions) {
+            $questionScore = $questionWeighting;
+        }
+
+        return $questionScore;
     }
 
     /**
@@ -5790,19 +6189,60 @@ EOT;
     }
 
     /**
-     * Check if an exercise complies with the requirements to be embedded in the mobile app or a video.
-     * By making sure it is set on one question per page and it only contains unique-answer or multiple-answer questions
-     * or unique-answer image. And that the exam does not have immediate feedback.
-     *
-     * @param array $exercise Exercise info
-     *
-     * @throws \Doctrine\ORM\Query\QueryException
-     *
-     * @return bool
+     * By default, allowed types are unique-answer (and image) or multiple-answer questions.
+     * Types can be extended by the configuration setting "exercise_embeddable_extra_types".
      */
-    public static function isQuizEmbeddable(array $exercise)
+    public static function getEmbeddableTypes(): array
     {
-        $em = Database::getManager();
+        $allowedTypes = [
+            UNIQUE_ANSWER,
+            MULTIPLE_ANSWER,
+            FILL_IN_BLANKS,
+            MATCHING,
+            FREE_ANSWER,
+            MULTIPLE_ANSWER_COMBINATION,
+            UNIQUE_ANSWER_NO_OPTION,
+            MULTIPLE_ANSWER_TRUE_FALSE,
+            MULTIPLE_ANSWER_COMBINATION_TRUE_FALSE,
+            ORAL_EXPRESSION,
+            GLOBAL_MULTIPLE_ANSWER,
+            CALCULATED_ANSWER,
+            UNIQUE_ANSWER_IMAGE,
+            READING_COMPREHENSION,
+            MULTIPLE_ANSWER_TRUE_FALSE_DEGREE_CERTAINTY,
+            UPLOAD_ANSWER,
+            MATCHING_GLOBAL,
+            FILL_IN_BLANKS_GLOBAL,
+            MULTIPLE_ANSWER_DROPDOWN,
+            MULTIPLE_ANSWER_DROPDOWN_GLOBAL,
+        ];
+        $defaultTypes = [UNIQUE_ANSWER, MULTIPLE_ANSWER, UNIQUE_ANSWER_IMAGE];
+        $types = $defaultTypes;
+
+        $extraTypes = api_get_configuration_value('exercise_embeddable_extra_types');
+
+        if (false !== $extraTypes && !empty($extraTypes['types'])) {
+            $types = array_merge($defaultTypes, $extraTypes['types']);
+        }
+
+        return array_filter(
+            array_unique($types),
+            function ($type) use ($allowedTypes) {
+                return in_array($type, $allowedTypes);
+            }
+        );
+    }
+
+    /**
+     * Check if an exercise complies with the requirements to be embedded in the mobile app or a video.
+     * By making sure it is set on one question per page, and that the exam does not have immediate feedback,
+     * and it only contains allowed types.
+     *
+     * @see Exercise::getEmbeddableTypes()
+     */
+    public static function isQuizEmbeddable(array $exercise): bool
+    {
+        $exercise['iid'] = isset($exercise['iid']) ? (int) $exercise['iid'] : 0;
 
         if (ONE_PER_PAGE != $exercise['type'] ||
             in_array($exercise['feedback_type'], [EXERCISE_FEEDBACK_TYPE_DIRECT, EXERCISE_FEEDBACK_TYPE_POPUP])
@@ -5810,32 +6250,12 @@ EOT;
             return false;
         }
 
-        $countAll = $em
-            ->createQuery('SELECT COUNT(qq)
-                FROM ChamiloCourseBundle:CQuizQuestion qq
-                INNER JOIN ChamiloCourseBundle:CQuizRelQuestion qrq
-                   WITH qq.iid = qrq.questionId
-                WHERE qrq.exerciceId = :id'
-            )
-            ->setParameter('id', $exercise['iid'])
-            ->getSingleScalarResult();
+        $questionRepository = Database::getManager()->getRepository(CQuizQuestion::class);
 
-        $countOfAllowed = $em
-            ->createQuery('SELECT COUNT(qq)
-                FROM ChamiloCourseBundle:CQuizQuestion qq
-                INNER JOIN ChamiloCourseBundle:CQuizRelQuestion qrq
-                   WITH qq.iid = qrq.questionId
-                WHERE qrq.exerciceId = :id AND qq.type IN (:types)'
-            )
-            ->setParameters(
-                [
-                    'id' => $exercise['iid'],
-                    'types' => [UNIQUE_ANSWER, MULTIPLE_ANSWER, UNIQUE_ANSWER_IMAGE],
-                ]
-            )
-            ->getSingleScalarResult();
+        $countAll = $questionRepository->countQuestionsInExercise($exercise['iid']);
+        $countAllowed = $questionRepository->countEmbeddableQuestionsInExercise($exercise['iid']);
 
-        return $countAll === $countOfAllowed;
+        return $countAll === $countAllowed;
     }
 
     /**
@@ -6072,11 +6492,10 @@ EOT;
         return $total;
     }
 
-    public static function getWrongQuestionResults($courseId, $exerciseId, $sessionId = 0, $groups = [], $users = [], $limit = 10)
+    public static function getWrongQuestionResults($courseId, $exerciseId, $sessionId = 0, $groups = [], $users = [])
     {
         $courseId = (int) $courseId;
         $exerciseId = (int) $exerciseId;
-        $limit = (int) $limit;
 
         $questionTable = Database::get_course_table(TABLE_QUIZ_QUESTION);
         $attemptTable = Database::get_main_table(TABLE_STATISTIC_TRACK_E_ATTEMPT);
@@ -6123,7 +6542,6 @@ EOT;
                     $userCondition
                 GROUP BY q.iid
                 ORDER BY count DESC
-                LIMIT $limit
         ";
 
         $result = Database::query($sql);
@@ -6587,5 +7005,22 @@ EOT;
         }
 
         return $scorePassed;
+    }
+
+    public static function logPingForCheckingConnection()
+    {
+        $action = $_REQUEST['a'] ?? '';
+
+        if ('ping' !== $action) {
+            return;
+        }
+
+        if (!empty(api_get_user_id())) {
+            return;
+        }
+
+        $exeId = $_REQUEST['exe_id'] ?? 0;
+
+        error_log("Exercise ping received: exe_id = $exeId. _user not found in session.");
     }
 }

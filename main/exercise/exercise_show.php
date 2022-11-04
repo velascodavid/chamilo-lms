@@ -176,6 +176,10 @@ if (RESULT_DISABLE_RADAR === (int) $objExercise->results_disabled) {
     $htmlHeadXtra[] = api_get_js('chartjs/Chart.min.js');
 }
 
+if (api_get_configuration_value('allow_skill_rel_items') == true) {
+    $htmlContentExtraClass[] = 'feature-item-user-skill-on';
+}
+
 if ($action !== 'export') {
     $scoreJsCode = ExerciseLib::getJsCode();
     if ($origin !== 'learnpath') {
@@ -438,6 +442,7 @@ foreach ($questionList as $questionId) {
         case MULTIPLE_ANSWER:
         case MULTIPLE_ANSWER_TRUE_FALSE:
         case FILL_IN_BLANKS:
+        case FILL_IN_BLANKS_GLOBAL:
         case CALCULATED_ANSWER:
         case GLOBAL_MULTIPLE_ANSWER:
         case FREE_ANSWER:
@@ -447,6 +452,8 @@ foreach ($questionList as $questionId) {
         case DRAGGABLE:
         case READING_COMPREHENSION:
         case MATCHING_DRAGGABLE:
+        case MULTIPLE_ANSWER_DROPDOWN:
+        case MULTIPLE_ANSWER_DROPDOWN_GLOBAL:
             $question_result = $objExercise->manage_answer(
                 $id,
                 $questionId,
@@ -483,6 +490,7 @@ foreach ($questionList as $questionId) {
             $totalScore += $questionResult['score'];
             break;
         case HOT_SPOT:
+        case HOT_SPOT_GLOBAL:
             if ($show_results || $showTotalScoreAndUserChoicesInLastAttempt) {
 //                echo '<table class="table table-bordered table-striped"><tr><td>';
             }
@@ -586,7 +594,7 @@ foreach ($questionList as $questionId) {
         echo '</table>';
     }
 
-    if ($show_results && $answerType != HOT_SPOT) {
+    if ($show_results && !in_array($answerType, [HOT_SPOT_GLOBAL, HOT_SPOT])) {
         echo '</table>';
     }
 

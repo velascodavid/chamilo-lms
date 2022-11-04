@@ -2,7 +2,10 @@
 
 /* For licensing terms, see /license.txt */
 
+use Chamilo\PluginBundle\Entity\XApi\ActivityProfile;
+use Chamilo\PluginBundle\Entity\XApi\ActivityState;
 use Chamilo\PluginBundle\Entity\XApi\Cmi5Item;
+use Chamilo\PluginBundle\Entity\XApi\InternalLog;
 use Chamilo\PluginBundle\Entity\XApi\LrsAuth;
 use Chamilo\PluginBundle\Entity\XApi\SharedStatement;
 use Chamilo\PluginBundle\Entity\XApi\ToolLaunch;
@@ -14,6 +17,7 @@ use GuzzleHttp\RequestOptions;
 use Http\Adapter\Guzzle6\Client;
 use Http\Message\MessageFactory\GuzzleMessageFactory;
 use Ramsey\Uuid\Uuid;
+use Xabbuh\XApi\Client\Api\StatementsApiClientInterface;
 use Xabbuh\XApi\Client\XApiClientBuilder;
 use Xabbuh\XApi\Model\Agent;
 use Xabbuh\XApi\Model\IRI;
@@ -24,25 +28,28 @@ use Xabbuh\XApi\Serializer\Symfony\Serializer;
  */
 class XApiPlugin extends Plugin implements HookPluginInterface
 {
-    const SETTING_LRS_URL = 'lrs_url';
-    const SETTING_LRS_AUTH_USERNAME = 'lrs_auth_username';
-    const SETTING_LRS_AUTH_PASSWORD = 'lrs_auth_password';
-    const SETTING_UUID_NAMESPACE = 'uuid_namespace';
-    const SETTING_LRS_LP_ITEM_ACTIVE = 'lrs_lp_item_viewed_active';
-    const SETTING_LRS_LP_ACTIVE = 'lrs_lp_end_active';
-    const SETTING_LRS_QUIZ_ACTIVE = 'lrs_quiz_active';
-    const SETTING_LRS_QUIZ_QUESTION_ACTIVE = 'lrs_quiz_question_active';
-    const SETTING_LRS_PORTFOLIO_ACTIVE = 'lrs_portfolio_active';
+    public const SETTING_LRS_URL = 'lrs_url';
+    public const SETTING_LRS_AUTH_USERNAME = 'lrs_auth_username';
+    public const SETTING_LRS_AUTH_PASSWORD = 'lrs_auth_password';
+    public const SETTING_CRON_LRS_URL = 'cron_lrs_url';
+    public const SETTING_CRON_LRS_AUTH_USERNAME = 'cron_lrs_auth_username';
+    public const SETTING_CRON_LRS_AUTH_PASSWORD = 'cron_lrs_auth_password';
+    public const SETTING_UUID_NAMESPACE = 'uuid_namespace';
+    public const SETTING_LRS_LP_ITEM_ACTIVE = 'lrs_lp_item_viewed_active';
+    public const SETTING_LRS_LP_ACTIVE = 'lrs_lp_end_active';
+    public const SETTING_LRS_QUIZ_ACTIVE = 'lrs_quiz_active';
+    public const SETTING_LRS_QUIZ_QUESTION_ACTIVE = 'lrs_quiz_question_active';
+    public const SETTING_LRS_PORTFOLIO_ACTIVE = 'lrs_portfolio_active';
 
-    const STATE_FIRST_LAUNCH = 'first_launch';
-    const STATE_LAST_LAUNCH = 'last_launch';
+    public const STATE_FIRST_LAUNCH = 'first_launch';
+    public const STATE_LAST_LAUNCH = 'last_launch';
 
     /**
      * XApiPlugin constructor.
      */
     protected function __construct()
     {
-        $version = '0.1 (beta)';
+        $version = '0.3 (beta)';
         $author = [
             'Angel Fernando Quiroz Campos <angel.quiroz@beeznest.com>',
         ];
@@ -52,6 +59,10 @@ class XApiPlugin extends Plugin implements HookPluginInterface
             self::SETTING_LRS_URL => 'text',
             self::SETTING_LRS_AUTH_USERNAME => 'text',
             self::SETTING_LRS_AUTH_PASSWORD => 'text',
+
+            self::SETTING_CRON_LRS_URL => 'text',
+            self::SETTING_CRON_LRS_AUTH_USERNAME => 'text',
+            self::SETTING_CRON_LRS_AUTH_PASSWORD => 'text',
 
             self::SETTING_LRS_LP_ITEM_ACTIVE => 'boolean',
             self::SETTING_LRS_LP_ACTIVE => 'boolean',
@@ -90,6 +101,9 @@ class XApiPlugin extends Plugin implements HookPluginInterface
                 'xapi_tool_launch',
                 'xapi_lrs_auth',
                 'xapi_cmi5_item',
+                'xapi_activity_state',
+                'xapi_activity_profile',
+                'xapi_internal_log',
 
                 'xapi_attachment',
                 'xapi_object',
@@ -107,7 +121,7 @@ class XApiPlugin extends Plugin implements HookPluginInterface
         }
 
         $this->installPluginDbTables();
-        $this->installUuid();
+        $this->installInitialConfig();
         $this->addCourseTools();
         $this->installHook();
     }
@@ -154,10 +168,13 @@ class XApiPlugin extends Plugin implements HookPluginInterface
         $schemaTool = new SchemaTool($em);
         $schemaTool->dropSchema(
             [
+                $em->getClassMetadata(ActivityProfile::class),
+                $em->getClassMetadata(ActivityState::class),
                 $em->getClassMetadata(SharedStatement::class),
                 $em->getClassMetadata(ToolLaunch::class),
                 $em->getClassMetadata(LrsAuth::class),
                 $em->getClassMetadata(Cmi5Item::class),
+                $em->getClassMetadata(InternalLog::class),
             ]
         );
 
@@ -190,12 +207,24 @@ class XApiPlugin extends Plugin implements HookPluginInterface
             ->getStateApiClient();
     }
 
-    /**
-     * @return \Xabbuh\XApi\Client\Api\StatementsApiClientInterface
-     */
-    public function getXApiStatementClient()
+    public function getXApiStatementClient(): StatementsApiClientInterface
     {
         return $this->createXApiClient()->getStatementsApiClient();
+    }
+
+    public function getXapiStatementCronClient(): StatementsApiClientInterface
+    {
+        $lrsUrl = $this->get(self::SETTING_CRON_LRS_URL);
+        $lrsUsername = $this->get(self::SETTING_CRON_LRS_AUTH_USERNAME);
+        $lrsPassword = $this->get(self::SETTING_CRON_LRS_AUTH_PASSWORD);
+
+        return $this
+            ->createXApiClient(
+                empty($lrsUrl) ? null : $lrsUrl,
+                empty($lrsUsername) ? null : $lrsUsername,
+                empty($lrsPassword) ? null : $lrsPassword
+            )
+            ->getStatementsApiClient();
     }
 
     /**
@@ -211,6 +240,7 @@ class XApiPlugin extends Plugin implements HookPluginInterface
         $quizEndHook = XApiQuizEndHookObserver::create();
         $portfolioItemAddedHook = XApiPortfolioItemAddedHookObserver::create();
         $portfolioItemCommentedHook = XApiPortfolioItemCommentedHookObserver::create();
+        $portfolioItemViewedHook = XApiPortfolioItemViewedHookObserver::create();
 
         $learningPathItemViewedEvent = HookLearningPathItemViewed::create();
         $learningPathEndEvent = HookLearningPathEnd::create();
@@ -218,6 +248,7 @@ class XApiPlugin extends Plugin implements HookPluginInterface
         $quizEndEvent = HookQuizEnd::create();
         $portfolioItemAddedEvent = HookPortfolioItemAdded::create();
         $portfolioItemCommentedEvent = HookPortfolioItemCommented::create();
+        $portfolioItemViewedEvent = HookPortfolioItemViewed::create();
 
         if ('true' === $this->get(self::SETTING_LRS_LP_ITEM_ACTIVE)) {
             $learningPathItemViewedEvent->attach($learningPathItemViewedHook);
@@ -246,9 +277,11 @@ class XApiPlugin extends Plugin implements HookPluginInterface
         if ('true' === $this->get(self::SETTING_LRS_PORTFOLIO_ACTIVE)) {
             $portfolioItemAddedEvent->attach($portfolioItemAddedHook);
             $portfolioItemCommentedEvent->attach($portfolioItemCommentedHook);
+            $portfolioItemViewedEvent->attach($portfolioItemViewedHook);
         } else {
             $portfolioItemAddedEvent->detach($portfolioItemAddedHook);
-            $portfolioItemCommentedEvent->attach($portfolioItemCommentedHook);
+            $portfolioItemCommentedEvent->detach($portfolioItemCommentedHook);
+            $portfolioItemViewedEvent->detach($portfolioItemViewedHook);
         }
 
         return $this;
@@ -310,11 +343,15 @@ class XApiPlugin extends Plugin implements HookPluginInterface
      */
     public function addCourseToolForTinCan($courseId)
     {
+        // The $link param is set to "../plugin" as a hack to link correctly to the plugin URL in course tool.
+        // Otherwise, the link en the course tool will link to "/main/" URL.
         $this->createLinkToCourseTool(
             $this->get_lang('ToolTinCan'),
             $courseId,
-            null,
-            'xapi/start.php'
+            'sessions_category.png',
+            '../plugin/xapi/start.php',
+            0,
+            'authoring'
         );
     }
 
@@ -495,6 +532,9 @@ class XApiPlugin extends Plugin implements HookPluginInterface
                 $em->getClassMetadata(ToolLaunch::class),
                 $em->getClassMetadata(LrsAuth::class),
                 $em->getClassMetadata(Cmi5Item::class),
+                $em->getClassMetadata(ActivityState::class),
+                $em->getClassMetadata(ActivityProfile::class),
+                $em->getClassMetadata(InternalLog::class),
             ]
         );
 
@@ -516,7 +556,7 @@ class XApiPlugin extends Plugin implements HookPluginInterface
     /**
      * @throws \Exception
      */
-    private function installUuid()
+    private function installInitialConfig()
     {
         $uuidNamespace = Uuid::uuid1();
 
@@ -526,6 +566,20 @@ class XApiPlugin extends Plugin implements HookPluginInterface
         api_add_setting(
             $uuidNamespace,
             $pluginName.'_'.self::SETTING_UUID_NAMESPACE,
+            $pluginName,
+            'setting',
+            'Plugins',
+            $pluginName,
+            '',
+            '',
+            '',
+            $urlId,
+            1
+        );
+
+        api_add_setting(
+            api_get_path(WEB_PATH).'plugin/xapi/lrs.php',
+            $pluginName.'_'.self::SETTING_LRS_URL,
             $pluginName,
             'setting',
             'Plugins',
@@ -576,6 +630,6 @@ class XApiPlugin extends Plugin implements HookPluginInterface
     {
         Database::getManager()
             ->createQuery('DELETE FROM ChamiloCourseBundle:CTool t WHERE t.category = :category AND t.link LIKE :link')
-            ->execute(['category' => 'plugin', 'link' => 'xapi/start.php%']);
+            ->execute(['category' => 'authoring', 'link' => '../plugin/xapi/start.php%']);
     }
 }

@@ -47,6 +47,7 @@ define('COURSE_TUTOR', 16); // student is tutor of a course (NOT in session)
 define('STUDENT_BOSS', 17); // student is boss
 define('INVITEE', 20);
 define('HRM_REQUEST', 21); //HRM has request for vinculation with user
+define('COURSE_EXLEARNER', 22);
 
 // Table of status
 $_status_list[COURSEMANAGER] = 'teacher'; // 1
@@ -170,6 +171,7 @@ define('SECTION_CUSTOMPAGE', 'custompage');
 define('PLATFORM_AUTH_SOURCE', 'platform');
 define('CAS_AUTH_SOURCE', 'cas');
 define('LDAP_AUTH_SOURCE', 'extldap');
+define('IMS_LTI_SOURCE', 'ims_lti');
 
 // CONSTANT defining the default HotPotatoes files directory
 define('DIR_HOTPOTATOES', '/HotPotatoes_files');
@@ -191,6 +193,10 @@ define('LOG_GROUP_PORTAL_REL_USER_ARRAY', 'soc_gr_user_array');
 define('LOG_GROUP_PORTAL_USER_SUBSCRIBED', 'soc_gr_u_subs');
 define('LOG_GROUP_PORTAL_USER_UNSUBSCRIBED', 'soc_gr_u_unsubs');
 define('LOG_GROUP_PORTAL_USER_UPDATE_ROLE', 'soc_gr_update_role');
+define('LOG_GROUP_PORTAL_COURSE_SUBSCRIBED', 'soc_gr_c_subs');
+define('LOG_GROUP_PORTAL_COURSE_UNSUBSCRIBED', 'soc_gr_c_unsubs');
+define('LOG_GROUP_PORTAL_SESSION_SUBSCRIBED', 'soc_gr_s_subs');
+define('LOG_GROUP_PORTAL_SESSION_UNSUBSCRIBED', 'soc_gr_s_unsubs');
 
 define('LOG_USER_DELETE', 'user_deleted');
 define('LOG_USER_CREATE', 'user_created');
@@ -290,6 +296,8 @@ define('LOG_SURVEY_ID', 'survey_id');
 define('LOG_SURVEY_CREATED', 'survey_created');
 define('LOG_SURVEY_DELETED', 'survey_deleted');
 define('LOG_SURVEY_CLEAN_RESULTS', 'survey_clean_results');
+
+define('LOG_WS', 'access_ws_');
 
 define('USERNAME_PURIFIER', '/[^0-9A-Za-z_\.\$-]/');
 
@@ -519,6 +527,12 @@ define('ANNOTATION', 20);
 define('READING_COMPREHENSION', 21);
 define('MULTIPLE_ANSWER_TRUE_FALSE_DEGREE_CERTAINTY', 22);
 define('UPLOAD_ANSWER', 23);
+define('MATCHING_GLOBAL', 24);
+define('MATCHING_DRAGGABLE_GLOBAL', 25);
+define('HOT_SPOT_GLOBAL', 26);
+define('FILL_IN_BLANKS_GLOBAL', 27);
+define('MULTIPLE_ANSWER_DROPDOWN_GLOBAL', 28);
+define('MULTIPLE_ANSWER_DROPDOWN', 29);
 
 define('EXERCISE_CATEGORY_RANDOM_SHUFFLED', 1);
 define('EXERCISE_CATEGORY_RANDOM_ORDERED', 2);
@@ -548,6 +562,7 @@ define('ITEM_TYPE_ATTENDANCE', 8);
 define('ITEM_TYPE_SURVEY', 9);
 define('ITEM_TYPE_FORUM_THREAD', 10);
 define('ITEM_TYPE_PORTFOLIO', 11);
+define('ITEM_TYPE_GRADEBOOK_EVALUATION', 12);
 
 // one big string with all question types, for the validator in pear/HTML/QuickForm/Rule/QuestionType
 define(
@@ -677,6 +692,7 @@ define('RESOURCE_ATTENDANCE', 'attendance');
 define('RESOURCE_WORK', 'work');
 define('RESOURCE_SESSION_COURSE', 'session_course');
 define('RESOURCE_GRADEBOOK', 'gradebook');
+define('RESOURCE_XAPI_TOOL', 'xapi_tool');
 define('ADD_THEMATIC_PLAN', 6);
 
 // Max online users to show per page (whoisonline)
@@ -1312,22 +1328,22 @@ function api_protect_course_script($print_headers = false, $allow_session_admins
  * @param bool Whether to allow session admins as well
  * @param bool Whether to allow HR directors as well
  * @param string An optional message (already passed through get_lang)
+ * @param bool Whether to allow session coach as well
  *
  * @return bool True if user is allowed, false otherwise.
  *              The function also outputs an error message in case not allowed
  *
  * @author Roan Embrechts (original author)
  */
-function api_protect_admin_script($allow_sessions_admins = false, $allow_drh = false, $message = null)
+function api_protect_admin_script($allow_sessions_admins = false, $allow_drh = false, $message = null, $allow_session_coach = false)
 {
     if (!api_is_platform_admin($allow_sessions_admins, $allow_drh)) {
-        api_not_allowed(true, $message);
-
-        return false;
+        if (!($allow_session_coach && api_is_coach())) {
+            api_not_allowed(true, $message);
+            return false;
+        }
     }
-
     api_block_inactive_user();
-
     return true;
 }
 
@@ -1930,15 +1946,20 @@ function api_get_user_entity($userId)
  *
  * @author Yannick Warnier <yannick.warnier@beeznest.com>
  */
-function api_get_user_info_from_username($username)
+function api_get_user_info_from_username($username, $authSource = null)
 {
     if (empty($username)) {
         return false;
     }
     $username = trim($username);
 
+    $andAuthSource = "";
+    if (isset($authSource)) {
+        $authSource = Database::escape_string($authSource);
+        $andAuthSource = " AND auth_source = '$authSource'";
+    }
     $sql = "SELECT * FROM ".Database::get_main_table(TABLE_MAIN_USER)."
-            WHERE username='".Database::escape_string($username)."'";
+            WHERE username='".Database::escape_string($username)."' $andAuthSource";
     $result = Database::query($sql);
     if (Database::num_rows($result) > 0) {
         $resultArray = Database::fetch_array($result);
@@ -2135,6 +2156,11 @@ function api_get_anonymous_id()
         $result = Database::query($sql);
         if (empty(Database::num_rows($result))) {
             $login = uniqid('anon_');
+            $email = ' anonymous@localhost.local';
+            if (api_get_setting('login_is_email') == 'true') {
+                $login = $login."@localhost.local";
+                $email = $login;
+            }
             $anonList = UserManager::get_user_list(['status' => ANONYMOUS], ['registration_date ASC']);
             if (count($anonList) >= $max) {
                 foreach ($anonList as $userToDelete) {
@@ -2147,7 +2173,7 @@ function api_get_anonymous_id()
                 $login,
                 'anon',
                 ANONYMOUS,
-                ' anonymous@localhost',
+                $email,
                 $login,
                 $login
             );
@@ -2497,8 +2523,9 @@ function api_generate_password($length = 8)
         $length = 2;
     }
 
-    $charactersLowerCase = 'abcdefghijkmnopqrstuvwxyz';
-    $charactersUpperCase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    $charactersLowerCase = Security::CHAR_LOWER;
+    $charactersUpperCase = Security::CHAR_UPPER;
+
     $minNumbers = 2;
     $length = $length - $minNumbers;
     $minLowerCase = round($length / 2);
@@ -2508,19 +2535,25 @@ function api_generate_password($length = 8)
     $passwordRequirements = api_get_configuration_value('password_requirements');
 
     $factory = new RandomLib\Factory();
-    $generator = $factory->getGenerator(new SecurityLib\Strength(SecurityLib\Strength::MEDIUM));
+    $generator = $factory->getMediumStrengthGenerator();
 
     if (!empty($passwordRequirements)) {
         $length = $passwordRequirements['min']['length'];
         $minNumbers = $passwordRequirements['min']['numeric'];
         $minLowerCase = $passwordRequirements['min']['lowercase'];
         $minUpperCase = $passwordRequirements['min']['uppercase'];
+        $minSpecials = $passwordRequirements['min']['specials'];
 
-        $rest = $length - $minNumbers - $minLowerCase - $minUpperCase;
+        $rest = $length - $minNumbers - $minLowerCase - $minUpperCase - $minSpecials;
         // Add the rest to fill the length requirement
         if ($rest > 0) {
-            $password .= $generator->generateString($rest, $charactersLowerCase.$charactersUpperCase);
+            $password .= $generator->generateString(
+                $rest,
+                $charactersLowerCase.$charactersUpperCase
+            );
         }
+
+        $password .= $generator->generateString($minSpecials, Security::CHAR_SYMBOLS);
     }
 
     // Min digits default 2
@@ -2560,6 +2593,7 @@ function api_check_password($password)
     // Optional
     $minLowerCase = $passwordRequirements['min']['lowercase'];
     $minUpperCase = $passwordRequirements['min']['uppercase'];
+    $minSpecials = $passwordRequirements['min']['specials'];
 
     $minLetters = $minLowerCase + $minUpperCase;
     $passwordLength = api_strlen($password);
@@ -2571,6 +2605,7 @@ function api_check_password($password)
     $digits = 0;
     $lowerCase = 0;
     $upperCase = 0;
+    $specials = 0;
 
     for ($i = 0; $i < $passwordLength; $i++) {
         $currentCharacterCode = api_ord(api_substr($password, $i, 1));
@@ -2584,6 +2619,10 @@ function api_check_password($password)
         if ($currentCharacterCode >= 48 && $currentCharacterCode <= 57) {
             $digits++;
         }
+
+        if (false !== strpos(Security::CHAR_SYMBOLS, $currentCharacterCode)) {
+            $specials++;
+        }
     }
 
     // Min number of digits
@@ -2596,7 +2635,11 @@ function api_check_password($password)
 
     if (!empty($minLowerCase)) {
         // Lowercase
-        $conditions['min_lowercase'] = $upperCase >= $minLowerCase;
+        $conditions['min_lowercase'] = $lowerCase >= $minLowerCase;
+    }
+
+    if (!empty($minSpecials)) {
+        $conditions['min_specials'] = $specials >= $minSpecials;
     }
 
     // Min letters
@@ -2826,8 +2869,13 @@ function api_get_session_visibility(
 
     // I don't care the session visibility.
     if (empty($row['access_start_date']) && empty($row['access_end_date'])) {
+
         // Session duration per student.
         if (isset($row['duration']) && !empty($row['duration'])) {
+            if (api_get_configuration_value('session_coach_access_after_duration_end') == true && api_is_teacher()) {
+                return SESSION_AVAILABLE;
+            }
+
             $duration = $row['duration'] * 24 * 60 * 60;
             $courseAccess = CourseManager::getFirstCourseAccessPerSessionAndUser($session_id, $userId);
 
@@ -3016,6 +3064,12 @@ function api_get_setting($variable, $key = null)
  */
 function api_get_plugin_setting($plugin, $variable)
 {
+    $settings = api_get_configuration_value('plugin_settings');
+
+    if (!empty($settings) && isset($settings[$plugin]) && isset($settings[$plugin][$variable])) {
+        return $settings[$plugin][$variable];
+    }
+
     $variableName = $plugin.'_'.$variable;
     $result = api_get_setting($variableName);
 
@@ -3315,7 +3369,6 @@ function api_is_coach($session_id = 0, $courseId = null, $check_student_view = t
             $sessionIsCoach = Database::store_result($result);
         }
     }
-
     return count($sessionIsCoach) > 0;
 }
 
@@ -3876,6 +3929,9 @@ function api_is_anonymous($user_id = null, $db_check = false)
         //if ($_user['user_id'] == 0) {
         // In some cases, api_set_anonymous doesn't seem to be triggered in local.inc.php. Make sure it is.
         // Occurs in agenda for admin links - YW
+        // it occurs when pages are opened directly without entering first the course home page. To fix it add
+        // $use_anonymous = true;
+        // before including global.inc.php in the page
         global $use_anonymous;
         if (isset($use_anonymous) && $use_anonymous) {
             api_set_anonymous();
@@ -5049,6 +5105,9 @@ function languageCodeToCountryIsoCodeForFlags($languageIsoCode)
             break;
         case 'uk': // Ukraine
             $country = 'ua';
+            break;
+        case 'vi': // Vietnam - GH#4231
+            $country = 'vn';
             break;
         case 'zh-TW':
         case 'zh':
@@ -8490,64 +8549,71 @@ function api_get_password_checker_js($usernameInputId, $passwordInputId)
         return null;
     }
 
-    $translations = [
-        'wordLength' => get_lang('PasswordIsTooShort'),
-        'wordNotEmail' => get_lang('YourPasswordCannotBeTheSameAsYourEmail'),
-        'wordSimilarToUsername' => get_lang('YourPasswordCannotContainYourUsername'),
-        'wordTwoCharacterClasses' => get_lang('WordTwoCharacterClasses'),
-        'wordRepetitions' => get_lang('TooManyRepetitions'),
-        'wordSequences' => get_lang('YourPasswordContainsSequences'),
-        'errorList' => get_lang('ErrorsFound'),
-        'veryWeak' => get_lang('PasswordVeryWeak'),
-        'weak' => get_lang('PasswordWeak'),
-        'normal' => get_lang('PasswordNormal'),
-        'medium' => get_lang('PasswordMedium'),
-        'strong' => get_lang('PasswordStrong'),
-        'veryStrong' => get_lang('PasswordVeryStrong'),
+    $minRequirements = Security::getPasswordRequirements()['min'];
+
+    $options = [
+        'rules' => [],
     ];
 
-    $js = api_get_asset('pwstrength-bootstrap/dist/pwstrength-bootstrap.min.js');
+    if ($minRequirements['length'] > 0) {
+        $options['rules'][] = [
+            'minChar' => $minRequirements['length'],
+            'pattern' => '.',
+            'helpText' => sprintf(
+                get_lang('NewPasswordRequirementMinXLength'),
+                $minRequirements['length']
+            ),
+        ];
+    }
+
+    if ($minRequirements['lowercase'] > 0) {
+        $options['rules'][] = [
+            'minChar' => $minRequirements['lowercase'],
+            'pattern' => '[a-z]',
+            'helpText' => sprintf(
+                get_lang('NewPasswordRequirementMinXLowercase'),
+                $minRequirements['lowercase']
+            ),
+        ];
+    }
+
+    if ($minRequirements['uppercase'] > 0) {
+        $options['rules'][] = [
+            'minChar' => $minRequirements['uppercase'],
+            'pattern' => '[A-Z]',
+            'helpText' => sprintf(
+                get_lang('NewPasswordRequirementMinXUppercase'),
+                $minRequirements['uppercase']
+            ),
+        ];
+    }
+
+    if ($minRequirements['numeric'] > 0) {
+        $options['rules'][] = [
+            'minChar' => $minRequirements['numeric'],
+            'pattern' => '[0-9]',
+            'helpText' => sprintf(
+                get_lang('NewPasswordRequirementMinXNumeric'),
+                $minRequirements['numeric']
+            ),
+        ];
+    }
+
+    if ($minRequirements['specials'] > 0) {
+        $options['rules'][] = [
+            'minChar' => $minRequirements['specials'],
+            'pattern' => '[!"#$%&\'()*+,\-./\\\:;<=>?@[\\]^_`{|}~]',
+            'helpText' => sprintf(
+                get_lang('NewPasswordRequirementMinXSpecials'),
+                $minRequirements['specials']
+            ),
+        ];
+    }
+
+    $js = api_get_js('password-checker/password-checker.js');
     $js .= "<script>
-    var errorMessages = {
-        password_to_short : \"".get_lang('PasswordIsTooShort')."\",
-        same_as_username : \"".get_lang('YourPasswordCannotBeTheSameAsYourUsername')."\"
-    };
-
     $(function() {
-        var lang = ".json_encode($translations).";
-        var options = {
-            common: {
-                onLoad: function () {
-                    //$('#messages').text('Start typing password');
-
-                    var inputGroup = $('".$passwordInputId."').parents('.input-group');
-
-                    if (inputGroup.length > 0) {
-                        inputGroup.find('.progress').insertAfter(inputGroup);
-                    }
-                }
-            },
-            ui: {
-                showVerdictsInsideProgressBar: true
-            },
-            onKeyUp: function (evt) {
-                $(evt.target).pwstrength('outputErrorList');
-            },
-            errorMessages : errorMessages,
-            viewports: {
-                progress: '#password_progress',
-                verdict: '#password-verdict',
-                errors: '#password-errors'
-            },
-            usernameField: '$usernameInputId'
-        };
-        options.i18n = {
-            t: function (key) {
-                var result = lang[key];
-                return result === key ? '' : result; // This assumes you return the
-            }
-        };
-        $('".$passwordInputId."').pwstrength(options);
+        $('".$passwordInputId."').passwordChecker(".json_encode($options).");
     });
     </script>";
 
@@ -9369,6 +9435,7 @@ function api_mail_html(
     }
     $mailView->assign('mail_header_style', api_get_configuration_value('mail_header_style'));
     $mailView->assign('mail_content_style', api_get_configuration_value('mail_content_style'));
+    $mailView->assign('include_ldjson', (empty($platform_email['EXCLUDE_JSON']) ? true : false));
     $layout = $mailView->get_template('mail/mail.tpl');
     $mail->Body = $mailView->fetch($layout);
 
@@ -10194,4 +10261,24 @@ function api_protect_webservices()
         echo "To enable, add \$_configuration['disable_webservices'] = true; in configuration.php";
         exit;
     }
+}
+
+function api_filename_has_blacklisted_stream_wrapper(string $filename)
+{
+    if (strpos($filename, '://') > 0) {
+        $wrappers = stream_get_wrappers();
+        $allowedWrappers = ['http', 'https', 'file'];
+
+        foreach ($wrappers as $wrapper) {
+            if (in_array($wrapper, $allowedWrappers)) {
+                continue;
+            }
+
+            if (stripos($filename, $wrapper.'://') === 0) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }

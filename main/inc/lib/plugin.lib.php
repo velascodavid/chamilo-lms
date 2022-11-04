@@ -241,7 +241,6 @@ class AppPlugin
             'h5p',
             'hello_world',
             'ims_lti',
-            'jcapture',
             'justification',
             'kannelsms',
             'keycloak',
@@ -884,5 +883,31 @@ class AppPlugin
         }
 
         return false;
+    }
+
+    public static function cleanEntitiesInBundle()
+    {
+        $pluginList = [
+            'CourseHomeNotify',
+            'EmbedRegistry',
+            'ImsLti',
+            'LtiProvider',
+            'StudentFollowUp',
+            'WhispeakAuth',
+        ];
+
+        foreach ($pluginList as $pluginName) {
+            $entityPath = api_get_path(SYS_PATH).'src/Chamilo/PluginBundle/Entity/'.$pluginName;
+
+            if (!is_dir($entityPath)) {
+                continue;
+            }
+
+            if (!is_writable($entityPath)) {
+                continue;
+            }
+
+            rmdirr($entityPath);
+        }
     }
 }

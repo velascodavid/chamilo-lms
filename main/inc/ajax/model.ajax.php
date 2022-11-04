@@ -565,6 +565,9 @@ switch ($action) {
         require_once api_get_path(SYS_CODE_PATH).'work/work.lib.php';
         $courseId = $_REQUEST['course'] ?? 0;
         $status = $_REQUEST['status'] ?? 0;
+        if (isset($_REQUEST['work_parent_ids'])) {
+            $whereCondition = ' parent_id IN('.Security::remove_XSS($_REQUEST['work_parent_ids']).')';
+        }
         $count = getAllWork(
             null,
             null,
@@ -1471,12 +1474,14 @@ switch ($action) {
             'qualification',
             'sent_date',
             'qualificator_id',
+            'qualificator_fullname',
+            'date_of_qualification',
             'correction',
         ];
         $columns = array_merge($columns, $plagiarismColumns);
         $columns[] = 'actions';
 
-        $sidx = in_array($sidx, $columns) ? $sidx : 'work_name';
+        $sidx = in_array($sidx, $columns) || in_array($sidx, ['firstname', 'lastname']) ? $sidx : 'work_name';
 
         $result = getAllWork(
             $start,
@@ -1583,6 +1588,8 @@ switch ($action) {
             'score',
             'user_ip',
             'status',
+            'qualificator_fullname',
+            'date_of_qualification',
             'actions',
         ];
         $officialCodeInList = api_get_setting('show_official_code_exercise_result_list');
@@ -1590,7 +1597,7 @@ switch ($action) {
             $columns = array_merge(['official_code'], $columns);
         }
 
-        $sidx = in_array($sidx, $columns) ? $sidx : 'course';
+        $sidx = in_array($sidx, $columns) ? $sidx : 'c_id';
 
         $result = ExerciseLib::get_exam_results_data(
             $start,
@@ -1613,6 +1620,7 @@ switch ($action) {
 
         break;
     case 'get_exercise_results':
+        $hideIp = api_get_configuration_value('exercise_hide_ip');
         $is_allowedToEdit = api_is_allowed_to_edit(null, true) ||
             api_is_drh() ||
             api_is_student_boss() ||
@@ -1631,10 +1639,20 @@ switch ($action) {
                 'status',
                 'lp',
                 'actions',
+                'exe_result',
+                'revised',
+                'orig_lp_id',
             ];
+            $indexIp = 8;
             $officialCodeInList = api_get_setting('show_official_code_exercise_result_list');
             if ($officialCodeInList === 'true') {
                 $columns = array_merge(['official_code'], $columns);
+                $indexIp = 9;
+            }
+            if ($hideIp) {
+                // It removes the column related to IP
+                unset($columns[$indexIp]);
+                $columns = array_values($columns);
             }
         }
 
@@ -1705,7 +1723,7 @@ switch ($action) {
 
         if (!empty($categoryList)) {
             foreach ($categoryList as $categoryInfo) {
-                $label = 'category_'.$categoryInfo['id'];
+                $label = 'category_'.$categoryInfo['iid'];
                 if ($operation === 'excel') {
                     $columns[] = $label.'_score_percentage';
                     $columns[] = $label.'_only_score';
@@ -1912,6 +1930,10 @@ switch ($action) {
                 $detailButtons[] = Display::url(
                     Display::return_icon('works.png', get_lang('WorksReport')),
                     api_get_path(WEB_CODE_PATH).'mySpace/works_in_session_report.php?session='.$session['id']
+                );
+                $detailButtons[] = Display::url(
+                    Display::return_icon('clock.png', get_lang('ProgressInSessionReport')),
+                    api_get_path(WEB_CODE_PATH).'mySpace/progress_in_session_report.php?session_id='.$session['id']
                 );
                 $detailButtons[] = Display::url(
                     Display::return_icon('2rightarrow.png'),

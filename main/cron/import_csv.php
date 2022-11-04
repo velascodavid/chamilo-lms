@@ -169,6 +169,10 @@ class ImportCsv
                         $method = 'importOpenSessions';
                     }
 
+                    if ($method == 'importOpensessions') {
+                        $method = 'importOpenSessions';
+                    }
+
                     if ($method === 'importSessionsall') {
                         $method = 'importSessionsUsersCareers';
                     }
@@ -222,6 +226,7 @@ class ImportCsv
                 'courseinsert-static',
                 'unsubscribe-static',
                 'care',
+                'skillset',
                 //'careers',
                 //'careersdiagram',
                 //'careersresults',
@@ -524,6 +529,14 @@ class ImportCsv
             ''
         );
 
+        // Course skill set.
+        CourseManager::create_course_extra_field(
+            'skillset',
+            1,
+            'Skill set',
+            ''
+        );
+
         CourseManager::create_course_extra_field(
             'disable_import_calendar',
             13,
@@ -798,6 +811,15 @@ class ImportCsv
                         0 //$reset_password = 0
                     );
 
+                    $table = Database::get_main_table(TABLE_MAIN_USER);
+                    $authSource = Database::escape_string($row['auth_source']);
+                    $sql = "UPDATE $table SET auth_source = '$authSource' WHERE id = ".$userInfo['user_id'];
+                    Database::query($sql);
+
+                    $this->logger->addInfo(
+                        'Teachers - #'.$userInfo['user_id']." auth_source was changed from '".$userInfo['auth_source']."' to '".$row['auth_source']."' "
+                    );
+
                     if ($result) {
                         foreach ($row as $key => $value) {
                             if (substr($key, 0, 6) == 'extra_') {
@@ -1062,6 +1084,15 @@ class ImportCsv
                         null, //$encrypt_method = '',
                         false, //$send_email = false,
                         $resetPassword //$reset_password = 0
+                    );
+
+                    $table = Database::get_main_table(TABLE_MAIN_USER);
+                    $authSource = Database::escape_string($row['auth_source']);
+                    $sql = "UPDATE $table SET auth_source = '$authSource' WHERE id = ".$userInfo['user_id'];
+                    Database::query($sql);
+
+                    $this->logger->addInfo(
+                        "Students - #".$userInfo['user_id']." auth_source was changed from '".$userInfo['auth_source']."' to '".$row['auth_source']."' "
                     );
 
                     if ($result) {
@@ -1782,6 +1813,81 @@ class ImportCsv
         }
     }
 
+    private function importSkillset(
+        $file,
+        $moveFile = true
+    ) {
+        $this->fixCSVFile($file);
+        $data = Import::csvToArray($file);
+        if (!empty($data)) {
+            $this->logger->addInfo(count($data).' records found.');
+            $extraFieldValues = new ExtraFieldValue('skill');
+            $em = Database::getManager();
+            $repo = $em->getRepository(\Chamilo\CoreBundle\Entity\Skill::class);
+            $skillSetList = [];
+            $urlId = api_get_current_access_url_id();
+
+            foreach ($data as $row) {
+                $skill = $repo->findOneBy(['shortCode' => $row['Code']]);
+                $new = false;
+                if ($skill === null) {
+                    $new = true;
+                    $skill = new \Chamilo\CoreBundle\Entity\Skill();
+                    $skill
+                        ->setShortCode($row['Code'])
+                        ->setDescription('')
+                        ->setAccessUrlId($urlId)
+                        ->setIcon('')
+                        ->setStatus(1)
+                    ;
+                }
+
+                $skill
+                    ->setName($row['Tekst'])
+                    ->setUpdatedAt(new DateTime())
+                ;
+                $em->persist($skill);
+                $em->flush();
+
+                if ($new) {
+                    $skillRelSkill = (new \Chamilo\CoreBundle\Entity\SkillRelSkill())
+                        ->setRelationType(0)
+                        ->setParentId(0)
+                        ->setLevel(0)
+                        ->setSkillId($skill->getId())
+                    ;
+                    $em->persist($skillRelSkill);
+                    $em->flush();
+                }
+
+                /*
+                $params = [
+                    'item_id' => $skill->getId(),
+                    'variable' => 'skillset',
+                    'value' => $row['SkillsetID'],
+                ];
+                $extraFieldValues->save($params);*/
+                $skillSetList[$row['SkillsetID']][] = $skill->getId();
+            }
+
+            //$courseRelSkills = [];
+            foreach ($skillSetList as $skillSetId => $skillList) {
+                $skillList = array_unique($skillList);
+                if (empty($skillList)) {
+                    continue;
+                }
+
+                $sql = "SELECT id FROM course WHERE code LIKE '%$skillSetId' ";
+                $result = Database::query($sql);
+                while ($row = Database::fetch_array($result, 'ASSOC')) {
+                    $courseId = $row['id'];
+                    //$courseRelSkills[$courseId] = $skillList;
+                    Skill::saveSkillsToCourse($skillList, $courseId, null);
+                }
+            }
+        }
+    }
+
     /**
      * @param string $file
      * @param bool   $moveFile
@@ -1802,7 +1908,6 @@ class ImportCsv
 
             foreach ($data as $row) {
                 $row = $this->cleanCourseRow($row);
-
                 $courseId = CourseManager::get_course_id_from_original_id(
                     $row['extra_'.$this->extraFieldIdNameList['course']],
                     $this->extraFieldIdNameList['course']
@@ -1831,6 +1936,12 @@ class ImportCsv
                             $courseInfo['code'],
                             'external_course_id',
                             $row['extra_'.$this->extraFieldIdNameList['course']]
+                        );
+
+                        CourseManager::update_course_extra_field_value(
+                            $courseInfo['code'],
+                            'skillset',
+                            $row['extra_courseskillset']
                         );
 
                         $this->logger->addInfo("Courses - Course created ".$courseInfo['code']);
@@ -1879,6 +1990,12 @@ class ImportCsv
                             $this->logger
                         );
                     }
+
+                    CourseManager::update_course_extra_field_value(
+                        $courseInfo['code'],
+                        'skillset',
+                        $row['extra_courseskillset']
+                    );
 
                     foreach ($teachers as $teacherId) {
                         if (isset($groupBackup['tutor'][$teacherId]) &&

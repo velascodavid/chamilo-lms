@@ -93,7 +93,8 @@ class ExtraFieldValue extends Model
         $showQuery = false,
         $saveOnlyThisFields = [],
         $avoidFields = [],
-        $forceSave = false
+        $forceSave = false,
+        $deleteOldValues = true
     ) {
         foreach ($params as $key => $value) {
             $found = strpos($key, '__persist__');
@@ -122,11 +123,15 @@ class ExtraFieldValue extends Model
             if (false === $forceSave) {
                 // if the field is not visible to the user in the end, we need to apply special rules.
                 if (1 != $fieldDetails['visible_to_self']) {
-                    //only admins should be able to add those values
-                    if (!api_is_platform_admin(true, true)) {
-                        // although if not admin but sent through a CLI script, we should accept it as well
-                        if (PHP_SAPI != 'cli') {
-                            continue; //not a CLI script, so don't write the value to DB
+                    if (isset($params['origin']) && 'profile' == $params['origin']) {
+                        continue;
+                    } else {
+                        //only admins should be able to add those values
+                        if (!api_is_platform_admin(true, true)) {
+                            // although if not admin but sent through a CLI script, we should accept it as well
+                            if (PHP_SAPI != 'cli') {
+                                continue; //not a CLI script, so don't write the value to DB
+                            }
                         }
                     }
                 }
@@ -204,8 +209,10 @@ class ExtraFieldValue extends Model
                             'itemId' => $params['item_id'],
                         ]);
 
-                    foreach ($currentTags as $extraFieldtag) {
-                        $em->remove($extraFieldtag);
+                    if ($deleteOldValues) {
+                        foreach ($currentTags as $extraFieldtag) {
+                            $em->remove($extraFieldtag);
+                        }
                     }
                     $em->flush();
                     $tagValues = is_array($value) ? $value : [$value];
@@ -819,6 +826,14 @@ class ExtraFieldValue extends Model
 
                         $result['value'] = implode(' / ', $optionValues);
                     }
+                }
+
+                if ($result['field_type'] == Extrafield::FIELD_TYPE_SELECT && !empty($result['value'])) {
+                    $fopt = (new ExtraFieldOption('user'))
+                        ->get_field_option_by_field_and_option($result['field_id'], $result['value']);
+                    $fopt = current(is_array($fopt) ? $fopt : []);
+
+                    $result['value'] = $fopt['display_text'] ?? $result['value'];
                 }
             }
 

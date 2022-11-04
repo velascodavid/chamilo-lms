@@ -445,6 +445,131 @@ class Statistics
     }
 
     /**
+     * Get the number of users by access url .
+     *
+     * @param $currentmonth
+     * @param $lastmonth
+     * @param $invoicingMonth
+     * @param $invoicingYear
+     *
+     * @return string
+     */
+    public static function printInvoicingByAccessUrl(
+        $currentMonth,
+        $lastMonth,
+        $invoicingMonth,
+        $invoicingYear
+    ) {
+        $tblTrackAccess = Database::get_main_table(TABLE_STATISTIC_TRACK_E_ACCESS);
+        $tblAccessUrlUser = Database::get_main_table(TABLE_MAIN_ACCESS_URL_REL_USER);
+        $tblAccessUrl = Database::get_main_table(TABLE_MAIN_ACCESS_URL);
+        $tblUser = Database::get_main_table(TABLE_MAIN_USER);
+        $tblCourse = Database::get_main_table(TABLE_MAIN_COURSE);
+        $tblSession = Database::get_main_table(TABLE_MAIN_SESSION);
+
+        $urls = api_get_access_url_from_user(api_get_user_id());
+        $allowFullUrlAccess = array_search(1, $urls);
+        $whereAccessUrl = '';
+        if (!empty($urls) && false === $allowFullUrlAccess) {
+            $whereAccessUrl = ' AND access_url_rel_user.access_url_id IN('.implode(',', $urls).')';
+        }
+
+        $sql = '
+		    SELECT
+		        DISTINCT access_url.description AS client,
+		        user.lastname,
+		        user.firstname,
+		        course.code AS course_code,
+		        MIN(DATE_FORMAT(track_e_access.access_date,"%d/%m/%Y")) AS start_date,
+		        access_session_id,
+		        CONCAT(coach.lastname,\' \',coach.firstname) AS trainer
+		    FROM '.$tblTrackAccess.' AS track_e_access
+            JOIN '.$tblAccessUrlUser.' AS access_url_rel_user ON access_url_rel_user.user_id=track_e_access.access_user_id
+            JOIN '.$tblAccessUrl.' AS access_url ON access_url.id=access_url_rel_user.access_url_id
+            JOIN '.$tblUser.' AS user ON user.user_id=access_user_id
+            JOIN '.$tblCourse.' AS course ON course.id=track_e_access.c_id
+            JOIN '.$tblSession.' AS session ON session.id=track_e_access.access_session_id
+            JOIN '.$tblUser.' AS coach ON coach.user_id=session.id_coach
+            WHERE
+                access_session_id > 0 AND
+                access_date LIKE \''.$currentMonth.'%\' AND
+                user.status = '.STUDENT.' AND
+                CONCAT(access_user_id,\'-\',access_session_id) NOT IN (SELECT CONCAT(access_user_id,\'-\',access_session_id) FROM '.$tblTrackAccess.' WHERE access_session_id > 0
+                AND access_date LIKE \''.$lastMonth.'%\')
+                '.$whereAccessUrl.'
+            GROUP BY
+                user.lastname,code
+            ORDER BY
+                access_url.description,
+                user.lastname,
+                user.firstname,
+                track_e_access.access_date
+            DESC,course.code
+		';
+        $result = Database::query($sql);
+
+        $monthList = api_get_months_long();
+        array_unshift($monthList, '');
+
+        $nMonth = (int) $invoicingMonth;
+        $content = '<h2>'.get_lang('NumberOfUsers').' '.strtolower($monthList[$nMonth]).' '.$invoicingYear.'</h2><br>';
+
+        $form = new FormValidator('invoice_month', 'get', api_get_self().'?report=invoicing&invoicing_month='.$invoicingMonth.'&invoicing_year='.$invoicingYear);
+        $form->addSelect('invoicing_month', get_lang('Month'), $monthList);
+        $currentYear = date("Y");
+        $yearList = [''];
+        for ($i = 0; $i < 3; $i++) {
+            $y = $currentYear - $i;
+            $yearList[$y] = $y;
+        }
+        $form->addSelect('invoicing_year', get_lang('Year'), $yearList);
+        $form->addButtonSend(get_lang('Filter'));
+        $form->addHidden('report', 'invoicing');
+        $content .= $form->returnForm();
+
+        $content .= '<br>';
+        $content .= '<table border=1 class="table table-bordered data_table">';
+        $content .= '<tr>
+            <th class="th-header">'.get_lang('Portal').'</th>
+            <th class="th-header">'.get_lang('LastName').'</th>
+            <th class="th-header">'.get_lang('FirstName').'</th>
+            <th class="th-header">'.get_lang('Code').'</th>
+            <th class="th-header">'.get_lang('StartDate').'</th>
+            <th class="th-header">'.get_lang('SessionId').'</th>
+            <th class="th-header">'.get_lang('Trainer').'</th>
+        </tr>';
+        $countusers = 0;
+        $lastname = '';
+        $lastportal = '';
+        while ($row = Database::fetch_array($result)) {
+            if (($row['client'] != $lastportal) && ($countusers > 0)) {
+                $content .= '<tr class="row_odd"><td colspan=7>'.get_lang('TotalUser').' '.$lastportal.' : '.$countusers.'</td></tr>';
+                $countusers = 0;
+            }
+            $content .= '<tr>
+                <td>'.$row['client'].'</td>
+                <td>'.$row['lastname'].'</td>
+                <td>'.$row['firstname'].'</td>
+                <td>'.$row['course_code'].'</td>
+                <td>'.$row['start_date'].'</td>
+                <td>'.$row['access_session_id'].'</td>
+                <td>'.$row['trainer'].'</td>
+            </tr>';
+            if ($lastname != $row['lastname'].$row['firstname']) {
+                $countusers++;
+            }
+            $lastname = $row['lastname'].$row['firstname'];
+            $lastportal = $row['client'];
+        }
+        $content .= '<tr class="row_odd">
+            <td colspan=7>'.get_lang('TotalUser').' '.$lastportal.' : '.$countusers.'</td>
+        </tr>';
+        $content .= '</table>';
+
+        return $content;
+    }
+
+    /**
      * Show statistics.
      *
      * @param string $title      The title
@@ -999,7 +1124,7 @@ class Statistics
             $table_header[] = [get_lang("LastAccess"), true];
 
             ob_start();
-            Display:: display_sortable_table(
+            Display::display_sortable_table(
                 $table_header,
                 $courses,
                 ['column' => $column, 'direction' => $direction],
@@ -1304,6 +1429,71 @@ class Statistics
     }
 
     /**
+     * It displays learnpath results from lti provider.
+     *
+     * @return false|string
+     */
+    public static function printLtiLearningPath()
+    {
+        $pluginLtiProvider = ('true' === api_get_plugin_setting('lti_provider', 'enabled'));
+
+        if (!$pluginLtiProvider) {
+            return false;
+        }
+
+        $content = Display::page_header(get_lang('LearningPathLTI'));
+        $actions = '';
+        $form = new FormValidator('frm_lti_tool_lp', 'get');
+        $form->addDateRangePicker(
+            'daterange',
+            get_lang('DateRange'),
+            true,
+            ['format' => 'YYYY-MM-DD', 'timePicker' => 'false', 'validate_format' => 'Y-m-d']
+        );
+        $form->addHidden('report', 'lti_tool_lp');
+        $form->addButtonFilter(get_lang('Search'));
+
+        if ($form->validate()) {
+            $values = $form->exportValues();
+
+            $result = self::getLtiLeaningPathByDate($values['daterange_start'], $values['daterange_end']);
+
+            $table = new HTML_Table(['class' => 'table table-bordered data_table']);
+            $table->setHeaderContents(0, 0, get_lang('URL'));
+            $table->setHeaderContents(0, 1, get_lang('ToolLp'));
+            $table->setHeaderContents(0, 2, get_lang('LastName'));
+            $table->setHeaderContents(0, 3, get_lang('FirstName'));
+            $table->setHeaderContents(0, 4, get_lang('FirstAccess'));
+            $i = 1;
+            foreach ($result as $item) {
+                if (!empty($item['learnpaths'])) {
+                    foreach ($item['learnpaths'] as $lpId => $lpValues) {
+                        $lpName = learnpath::getLpNameById($lpId);
+                        if (count($lpValues['users']) > 0) {
+                            foreach ($lpValues['users'] as $user) {
+                                $table->setCellContents($i, 0, $item['issuer']);
+                                $table->setCellContents($i, 1, $lpName);
+                                $table->setCellContents($i, 2, $user['lastname']);
+                                $table->setCellContents($i, 3, $user['firstname']);
+                                $table->setCellContents($i, 4, $user['first_access']);
+                                $i++;
+                            }
+                        }
+                    }
+                }
+            }
+            $content = $table->toHtml();
+        }
+
+        $content .= $form->returnForm();
+        if (!empty($actions)) {
+            $content .= Display::toolbarAction('lti_tool_lp_toolbar', [$actions]);
+        }
+
+        return $content;
+    }
+
+    /**
      * Display the Logins By Date report and allow export its result to XLS.
      */
     public static function printLoginsByDate()
@@ -1417,6 +1607,34 @@ class Statistics
         }
 
         return '<table id="table_'.$bossId.'"></table>';
+    }
+
+    /**
+     * It gets lti learnpath results by date.
+     *
+     * @param $startDate
+     * @param $endDate
+     *
+     * @return array
+     */
+    private static function getLtiLeaningPathByDate($startDate, $endDate)
+    {
+        /** @var DateTime $startDate */
+        $startDate = api_get_utc_datetime("$startDate 00:00:00");
+        /** @var DateTime $endDate */
+        $endDate = api_get_utc_datetime("$endDate 23:59:59");
+
+        if (empty($startDate) || empty($endDate)) {
+            return [];
+        }
+
+        require_once api_get_path(SYS_PLUGIN_PATH).'lti_provider/LtiProviderPlugin.php';
+
+        $plugin = LtiProviderPlugin::create();
+
+        $result = $plugin->getToolLearnPathResult($startDate, $endDate);
+
+        return $result;
     }
 
     /**

@@ -159,6 +159,19 @@ switch ($action) {
         header('Location: '.$url);
         exit;
         break;
+    case 'download_all_certificates':
+        $courseCode = api_get_course_id();
+        $sessionId = api_get_session_id();
+        $categoryId = (int) $_GET['catId'];
+        $date = api_get_utc_datetime(null, false, true);
+        $pdfName = 'certs_'.$courseCode.'_'.$sessionId.'_'.$categoryId.'_'.$date->format('Y-m-d');
+        $finalFile = api_get_path(SYS_ARCHIVE_PATH)."$pdfName.pdf";
+
+        $result = DocumentManager::file_send_for_download($finalFile, true);
+        if (false === $result) {
+            api_not_allowed(true);
+        }
+        break;
 }
 
 $interbreadcrumb[] = [
@@ -322,15 +335,15 @@ if (count($certificate_list) == 0) {
                 ['target' => '_blank', 'class' => 'btn btn-default']
             );
             echo $certificateUrl.PHP_EOL;
-
-            $url .= '&action=export';
-            $pdf = Display::url(
-                Display::return_icon('pdf.png', get_lang('Download')),
-                $url,
-                ['target' => '_blank']
-            );
-            echo $pdf.PHP_EOL;
-
+            if ($hideCertificateExport !== 'true') {
+                $url .= '&action=export';
+                $pdf = Display::url(
+                    Display::return_icon('pdf.png', get_lang('Download')),
+                    $url,
+                    ['target' => '_blank']
+                );
+                echo $pdf.PHP_EOL;
+            }
             echo '<a onclick="return confirmation();" href="gradebook_display_certificate.php?sec_token='.$token.'&'.api_get_cidreq().'&action=delete&cat_id='.$categoryId.'&certificate_id='.$valueCertificate['id'].'">
                     '.Display::return_icon('delete.png', get_lang('Delete')).'
                   </a>'.PHP_EOL;

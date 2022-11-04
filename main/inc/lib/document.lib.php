@@ -1381,6 +1381,23 @@ class DocumentManager
             $sessionId = intval($sessionId);
         }
 
+        // Special case: cache doc ID for 3600s if "/" has already been queried
+        // recently.
+        // This is a hack. Better solutions: use apcu (not always available)
+        // and even better: reduce the amount of calls by not processing
+        // documents that will not be shown (e.g. on other pages of a table)
+        $isSlash = ($path === '/');
+        if ($isSlash) {
+            $cSSlashString = 'docIdSlash2C'.$courseId.'S'.$sessionId;
+            $storedSlashId = Session::read($cSSlashString);
+            $now = time();
+            if (is_array($storedSlashId)) {
+                if ($storedSlashId['t'] >= $now - 3600) {
+                    return $storedSlashId['id'];
+                }
+            }
+        }
+
         $path = Database::escape_string($path);
         if (!empty($courseId) && !empty($path)) {
             $folderCondition = '';
@@ -1398,8 +1415,15 @@ class DocumentManager
             $result = Database::query($sql);
             if (Database::num_rows($result)) {
                 $row = Database::fetch_array($result);
+                if ($isSlash) {
+                    Session::write($cSSlashString, ['t' => $now, 'id' => intval($row['id'])]);
+                }
 
                 return intval($row['id']);
+            }
+            if ($isSlash) {
+                // Even if there is no "/" document/folder, store a result to avoid querying the database again
+                Session::write($cSSlashString, ['t' => $now, 'id' => false]);
             }
         }
 
@@ -2014,6 +2038,7 @@ class DocumentManager
         $first_name = $user_info['firstname'];
         $last_name = $user_info['lastname'];
         $username = $user_info['username'];
+        $user_picture = UserManager::getUserPicture($user_id, USER_IMAGE_SIZE_ORIGINAL);
         $official_code = $user_info['official_code'];
 
         // Teacher information
@@ -2032,20 +2057,24 @@ class DocumentManager
         $info_grade_certificate = UserManager::get_info_gradebook_certificate($courseCode, $sessionId, $user_id);
         $date_long_certificate = '';
         $date_certificate = '';
+        $date_short_no_time = '';
         $url = '';
         if ($info_grade_certificate) {
             $date_certificate = $info_grade_certificate['created_at'];
             $url = api_get_path(WEB_PATH).'certificates/index.php?id='.$info_grade_certificate['id'];
         }
         $date_no_time = api_convert_and_format_date(api_get_utc_datetime(), DATE_FORMAT_LONG_NO_DAY);
+        $date_short_no_time = api_convert_and_format_date(api_get_utc_datetime(), DATE_FORMAT_NUMBER);
         if (!empty($date_certificate)) {
             $date_long_certificate = api_convert_and_format_date($date_certificate);
             $date_no_time = api_convert_and_format_date($date_certificate, DATE_FORMAT_LONG_NO_DAY);
+            $date_short_no_time = api_convert_and_format_date($date_certificate, DATE_FORMAT_NUMBER);
         }
 
         if ($is_preview) {
             $date_long_certificate = api_convert_and_format_date(api_get_utc_datetime());
             $date_no_time = api_convert_and_format_date(api_get_utc_datetime(), DATE_FORMAT_LONG_NO_DAY);
+            $date_short_no_time = api_convert_and_format_date(api_get_utc_datetime(), DATE_FORMAT_NUMBER);
         }
 
         $externalStyleFile = api_get_path(SYS_CSS_PATH).'themes/'.api_get_visual_theme().'/certificate.css';
@@ -2093,6 +2122,7 @@ class DocumentManager
             $first_name,
             $last_name,
             $username,
+            $user_picture,
             $organization_name,
             $portal_name,
             $teacher_first_name,
@@ -2100,6 +2130,7 @@ class DocumentManager
             $official_code,
             $date_long_certificate,
             $date_no_time,
+            $date_short_no_time,
             $courseCode,
             $course_info['name'],
             isset($info_grade_certificate['grade']) ? $info_grade_certificate['grade'] : '',
@@ -2117,6 +2148,7 @@ class DocumentManager
             '((user_firstname))',
             '((user_lastname))',
             '((user_username))',
+            '((user_picture))',
             '((gradebook_institution))',
             '((gradebook_sitename))',
             '((teacher_firstname))',
@@ -2124,6 +2156,7 @@ class DocumentManager
             '((official_code))',
             '((date_certificate))',
             '((date_certificate_no_time))',
+            '((date_simple_certificate))',
             '((course_code))',
             '((course_title))',
             '((gradebook_grade))',
@@ -2138,10 +2171,16 @@ class DocumentManager
         ];
 
         if (!empty($extraFields)) {
+            $efv = new ExtraFieldValue('user');
+
             foreach ($extraFields as $extraField) {
-                $valueExtra = isset($extra_user_info_data[$extraField['variable']]) ? $extra_user_info_data[$extraField['variable']] : '';
+                $valueExtra = $efv->get_values_by_handler_and_field_variable(
+                    $user_id,
+                    $extraField['variable'],
+                    true
+                );
                 $tags[] = '(('.strtolower($extraField['variable']).'))';
-                $info_to_replace_in_content_html[] = $valueExtra;
+                $info_to_replace_in_content_html[] = $valueExtra['value'];
             }
         }
 
@@ -3356,7 +3395,7 @@ class DocumentManager
                 $html .= '<audio id="'.$id.'" controls="controls" src="'.$file.'" type="audio/mp3" ></audio></div>';
                 break;
             default:
-                $html = '<video id="'.$id.'" controls>';
+                $html = '<video id="'.$id.'" width="100%" height="100%" controls>';
                 $html .= '<source src="'.$file.'" >';
                 $html .= '</video>';
                 break;
@@ -3613,7 +3652,7 @@ class DocumentManager
             </script>";
         } else {
             // For LPs
-            $url = $lpAjaxUrl.'?a=get_documents&lp_id='.$lp_id.'&'.api_get_cidreq();
+            $url = $lpAjaxUrl.'?a=get_documents&lp_id='.(int) $lp_id.'&'.api_get_cidreq();
         }
 
         if (!empty($overwrite_url)) {
@@ -7018,7 +7057,8 @@ class DocumentManager
         // Show the "image name" not the filename of the image.
         if ($lp_id) {
             // LP URL
-            $url = api_get_path(WEB_CODE_PATH).'lp/lp_controller.php?'.api_get_cidreq().'&action=add_item&type='.TOOL_DOCUMENT.'&file='.$documentId.'&lp_id='.$lp_id;
+            $url = api_get_path(WEB_CODE_PATH).
+                'lp/lp_controller.php?'.api_get_cidreq().'&action=add_item&type='.TOOL_DOCUMENT.'&file='.$documentId.'&lp_id='.(int) $lp_id;
         } else {
             // Direct document URL
             $url = $web_code_path.'document/document.php?cidReq='.$courseInfo['code'].'&id_session='.$session_id.'&id='.$documentId;

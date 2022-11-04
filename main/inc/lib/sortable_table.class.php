@@ -300,22 +300,22 @@ class SortableTable extends HTML_Table
             $params['urlVar'] = $this->param_prefix.'page_nr';
             $params['currentPage'] = $this->page_nr;
             $icon_attributes = ['style' => 'vertical-align: middle;'];
-            $params['prevImg'] = Display:: return_icon(
+            $params['prevImg'] = Display::return_icon(
                 'action_prev.png',
                 get_lang('PreviousPage'),
                 $icon_attributes
             );
-            $params['nextImg'] = Display:: return_icon(
+            $params['nextImg'] = Display::return_icon(
                 'action_next.png',
                 get_lang('NextPage'),
                 $icon_attributes
             );
-            $params['firstPageText'] = Display:: return_icon(
+            $params['firstPageText'] = Display::return_icon(
                 'action_first.png',
                 get_lang('FirstPage'),
                 $icon_attributes
             );
-            $params['lastPageText'] = Display:: return_icon(
+            $params['lastPageText'] = Display::return_icon(
                 'action_last.png',
                 get_lang('LastPage'),
                 $icon_attributes
@@ -1003,9 +1003,9 @@ class SortableTable extends HTML_Table
      * Add a filter to a column. If another filter was already defined for the
      * given column, it will be overwritten.
      *
-     * @param int    $column   The number of the column
-     * @param string $function The name of the filter-function. This should be a
-     *                         function wich requires 1 parameter and returns the filtered value.
+     * @param int            $column   The number of the column
+     * @param string|Closure $function The name of the filter-function. This should be a
+     *                                 function wich requires 1 parameter and returns the filtered value.
      */
     public function set_column_filter($column, $function)
     {

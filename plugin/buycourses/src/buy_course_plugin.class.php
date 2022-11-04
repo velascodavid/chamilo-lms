@@ -20,56 +20,60 @@ use Symfony\Component\HttpFoundation\Request as HttpRequest;
  */
 class BuyCoursesPlugin extends Plugin
 {
-    const TABLE_PAYPAL = 'plugin_buycourses_paypal_account';
-    const TABLE_CURRENCY = 'plugin_buycourses_currency';
-    const TABLE_ITEM = 'plugin_buycourses_item';
-    const TABLE_ITEM_BENEFICIARY = 'plugin_buycourses_item_rel_beneficiary';
-    const TABLE_SALE = 'plugin_buycourses_sale';
-    const TABLE_TRANSFER = 'plugin_buycourses_transfer';
-    const TABLE_COMMISSION = 'plugin_buycourses_commission';
-    const TABLE_PAYPAL_PAYOUTS = 'plugin_buycourses_paypal_payouts';
-    const TABLE_SERVICES = 'plugin_buycourses_services';
-    const TABLE_SERVICES_SALE = 'plugin_buycourses_service_sale';
-    const TABLE_CULQI = 'plugin_buycourses_culqi';
-    const TABLE_GLOBAL_CONFIG = 'plugin_buycourses_global_config';
-    const TABLE_INVOICE = 'plugin_buycourses_invoices';
-    const TABLE_TPV_REDSYS = 'plugin_buycourses_tpvredsys_account';
-    const TABLE_COUPON = 'plugin_buycourses_coupon';
-    const TABLE_COUPON_ITEM = 'plugin_buycourses_coupon_rel_item';
-    const TABLE_COUPON_SERVICE = 'plugin_buycourses_coupon_rel_service';
-    const TABLE_COUPON_SALE = 'plugin_buycourses_coupon_rel_sale';
-    const TABLE_COUPON_SERVICE_SALE = 'plugin_buycourses_coupon_rel_service_sale';
-    const PRODUCT_TYPE_COURSE = 1;
-    const PRODUCT_TYPE_SESSION = 2;
-    const PRODUCT_TYPE_SERVICE = 3;
-    const PAYMENT_TYPE_PAYPAL = 1;
-    const PAYMENT_TYPE_TRANSFER = 2;
-    const PAYMENT_TYPE_CULQI = 3;
-    const PAYMENT_TYPE_TPV_REDSYS = 4;
-    const PAYOUT_STATUS_CANCELED = 2;
-    const PAYOUT_STATUS_PENDING = 0;
-    const PAYOUT_STATUS_COMPLETED = 1;
-    const SALE_STATUS_CANCELED = -1;
-    const SALE_STATUS_PENDING = 0;
-    const SALE_STATUS_COMPLETED = 1;
-    const SERVICE_STATUS_PENDING = 0;
-    const SERVICE_STATUS_COMPLETED = 1;
-    const SERVICE_STATUS_CANCELLED = -1;
-    const SERVICE_TYPE_USER = 1;
-    const SERVICE_TYPE_COURSE = 2;
-    const SERVICE_TYPE_SESSION = 3;
-    const SERVICE_TYPE_LP_FINAL_ITEM = 4;
-    const CULQI_INTEGRATION_TYPE = 'INTEG';
-    const CULQI_PRODUCTION_TYPE = 'PRODUC';
-    const TAX_APPLIES_TO_ALL = 1;
-    const TAX_APPLIES_TO_ONLY_COURSE = 2;
-    const TAX_APPLIES_TO_ONLY_SESSION = 3;
-    const TAX_APPLIES_TO_ONLY_SERVICES = 4;
-    const PAGINATION_PAGE_SIZE = 6;
-    const COUPON_DISCOUNT_TYPE_PERCENTAGE = 1;
-    const COUPON_DISCOUNT_TYPE_AMOUNT = 2;
-    const COUPON_STATUS_ACTIVE = 1;
-    const COUPON_STATUS_DISABLE = 0;
+    public const TABLE_PAYPAL = 'plugin_buycourses_paypal_account';
+    public const TABLE_CURRENCY = 'plugin_buycourses_currency';
+    public const TABLE_ITEM = 'plugin_buycourses_item';
+    public const TABLE_ITEM_BENEFICIARY = 'plugin_buycourses_item_rel_beneficiary';
+    public const TABLE_SALE = 'plugin_buycourses_sale';
+    public const TABLE_TRANSFER = 'plugin_buycourses_transfer';
+    public const TABLE_COMMISSION = 'plugin_buycourses_commission';
+    public const TABLE_PAYPAL_PAYOUTS = 'plugin_buycourses_paypal_payouts';
+    public const TABLE_SERVICES = 'plugin_buycourses_services';
+    public const TABLE_SERVICES_SALE = 'plugin_buycourses_service_sale';
+    public const TABLE_CULQI = 'plugin_buycourses_culqi';
+    public const TABLE_GLOBAL_CONFIG = 'plugin_buycourses_global_config';
+    public const TABLE_INVOICE = 'plugin_buycourses_invoices';
+    public const TABLE_TPV_REDSYS = 'plugin_buycourses_tpvredsys_account';
+    public const TABLE_COUPON = 'plugin_buycourses_coupon';
+    public const TABLE_COUPON_ITEM = 'plugin_buycourses_coupon_rel_item';
+    public const TABLE_COUPON_SERVICE = 'plugin_buycourses_coupon_rel_service';
+    public const TABLE_COUPON_SALE = 'plugin_buycourses_coupon_rel_sale';
+    public const TABLE_COUPON_SERVICE_SALE = 'plugin_buycourses_coupon_rel_service_sale';
+    public const TABLE_STRIPE = 'plugin_buycourses_stripe_account';
+    public const TABLE_TPV_CECABANK = 'plugin_buycourses_cecabank_account';
+    public const PRODUCT_TYPE_COURSE = 1;
+    public const PRODUCT_TYPE_SESSION = 2;
+    public const PRODUCT_TYPE_SERVICE = 3;
+    public const PAYMENT_TYPE_PAYPAL = 1;
+    public const PAYMENT_TYPE_TRANSFER = 2;
+    public const PAYMENT_TYPE_CULQI = 3;
+    public const PAYMENT_TYPE_TPV_REDSYS = 4;
+    public const PAYMENT_TYPE_STRIPE = 5;
+    public const PAYMENT_TYPE_TPV_CECABANK = 6;
+    public const PAYOUT_STATUS_CANCELED = 2;
+    public const PAYOUT_STATUS_PENDING = 0;
+    public const PAYOUT_STATUS_COMPLETED = 1;
+    public const SALE_STATUS_CANCELED = -1;
+    public const SALE_STATUS_PENDING = 0;
+    public const SALE_STATUS_COMPLETED = 1;
+    public const SERVICE_STATUS_PENDING = 0;
+    public const SERVICE_STATUS_COMPLETED = 1;
+    public const SERVICE_STATUS_CANCELLED = -1;
+    public const SERVICE_TYPE_USER = 1;
+    public const SERVICE_TYPE_COURSE = 2;
+    public const SERVICE_TYPE_SESSION = 3;
+    public const SERVICE_TYPE_LP_FINAL_ITEM = 4;
+    public const CULQI_INTEGRATION_TYPE = 'INTEG';
+    public const CULQI_PRODUCTION_TYPE = 'PRODUC';
+    public const TAX_APPLIES_TO_ALL = 1;
+    public const TAX_APPLIES_TO_ONLY_COURSE = 2;
+    public const TAX_APPLIES_TO_ONLY_SESSION = 3;
+    public const TAX_APPLIES_TO_ONLY_SERVICES = 4;
+    public const PAGINATION_PAGE_SIZE = 6;
+    public const COUPON_DISCOUNT_TYPE_PERCENTAGE = 1;
+    public const COUPON_DISCOUNT_TYPE_AMOUNT = 2;
+    public const COUPON_STATUS_ACTIVE = 1;
+    public const COUPON_STATUS_DISABLE = 0;
 
     public $isAdminPlugin = true;
 
@@ -79,7 +83,7 @@ class BuyCoursesPlugin extends Plugin
     public function __construct()
     {
         parent::__construct(
-            '5.0',
+            '7.1',
             "
                 Jose Angel Ruiz - NoSoloRed (original author) <br/>
                 Francis Gonzales and Yannick Warnier - BeezNest (integration) <br/>
@@ -104,6 +108,8 @@ class BuyCoursesPlugin extends Plugin
                 'tax_enable' => 'boolean',
                 'use_currency_symbol' => 'boolean',
                 'tpv_redsys_enable' => 'boolean',
+                'stripe_enable' => 'boolean',
+                'cecabank_enable' => 'boolean',
             ]
         );
     }
@@ -127,7 +133,7 @@ class BuyCoursesPlugin extends Plugin
      */
     public function isEnabled($checkEnabled = false)
     {
-        return $this->get('paypal_enable') || $this->get('transfer_enable') || $this->get('culqi_enable');
+        return $this->get('paypal_enable') || $this->get('transfer_enable') || $this->get('culqi_enable') || $this->get('stripe_enable') || $this->get('cecabank_enable');
     }
 
     /**
@@ -155,6 +161,8 @@ class BuyCoursesPlugin extends Plugin
             self::TABLE_COUPON_SERVICE,
             self::TABLE_COUPON_SALE,
             self::TABLE_COUPON_SERVICE_SALE,
+            self::TABLE_STRIPE,
+            self::TABLE_TPV_CECABANK,
         ];
         $em = Database::getManager();
         $cn = $em->getConnection();
@@ -193,6 +201,7 @@ class BuyCoursesPlugin extends Plugin
             self::TABLE_COUPON_SERVICE,
             self::TABLE_COUPON_SALE,
             self::TABLE_COUPON_SERVICE_SALE,
+            self::TABLE_STRIPE,
         ];
 
         foreach ($tablesToBeDeleted as $tableToBeDeleted) {
@@ -412,6 +421,41 @@ class BuyCoursesPlugin extends Plugin
         )";
         Database::query($sql);
 
+        $table = self::TABLE_STRIPE;
+        $sql = "CREATE TABLE IF NOT EXISTS $table (
+            id int unsigned NOT NULL AUTO_INCREMENT,
+            account_id varchar(255) NOT NULL,
+            secret_key varchar(255) NOT NULL,
+            endpoint_secret varchar(255) NOT NULL,
+            PRIMARY KEY (id)
+        )";
+        Database::query($sql);
+
+        $sql = "SELECT * FROM $table";
+        $res = Database::query($sql);
+        if (Database::num_rows($res) == 0) {
+            Database::insert($table, [
+                'account_id' => '',
+                'secret_key' => '',
+                'endpoint_secret' => '',
+            ]);
+        }
+
+        $table = self::TABLE_TPV_CECABANK;
+        $sql = "CREATE TABLE IF NOT EXISTS $table (
+            id int unsigned NOT NULL AUTO_INCREMENT,
+            crypto_key varchar(255) NOT NULL,
+            merchant_id varchar(255) NOT NULL,
+            acquirer_bin varchar(255) NOT NULL,
+            terminal_id varchar(255) NOT NULL,
+            cypher varchar(255) NOT NULL,
+            exponent varchar(255) NOT NULL,
+            supported_payment varchar(255) NOT NULL,
+            url varchar(255) NOT NULL,
+            PRIMARY KEY (id)
+        )";
+        Database::query($sql);
+
         Display::addFlash(
             Display::return_message(
                 $this->get_lang('Updated'),
@@ -627,6 +671,41 @@ class BuyCoursesPlugin extends Plugin
                 'sandbox' => isset($params['sandbox']),
             ],
             ['id = ?' => 1]
+        );
+    }
+
+    /**
+     * Save Stripe configuration params.
+     *
+     * @param array $params
+     *
+     * @return int Rows affected. Otherwise return false
+     */
+    public function saveStripeParameters($params)
+    {
+        return Database::update(
+            Database::get_main_table(self::TABLE_STRIPE),
+            [
+                'account_id' => $params['account_id'],
+                'secret_key' => $params['secret_key'],
+                'endpoint_secret' => $params['endpoint_secret'],
+            ],
+            ['id = ?' => 1]
+        );
+    }
+
+    /**
+     * Gets the stored Stripe params.
+     *
+     * @return array
+     */
+    public function getStripeParams()
+    {
+        return Database::select(
+            '*',
+            Database::get_main_table(self::TABLE_STRIPE),
+            ['id = ?' => 1],
+            'first'
         );
     }
 
@@ -1116,6 +1195,8 @@ class BuyCoursesPlugin extends Plugin
                     self::PAYMENT_TYPE_TRANSFER,
                     self::PAYMENT_TYPE_CULQI,
                     self::PAYMENT_TYPE_TPV_REDSYS,
+                    self::PAYMENT_TYPE_STRIPE,
+                    self::PAYMENT_TYPE_TPV_CECABANK,
                 ]
             )
         ) {
@@ -1212,6 +1293,25 @@ class BuyCoursesPlugin extends Plugin
     }
 
     /**
+     * Update the sale reference.
+     *
+     * @param int $saleId        The sale ID
+     * @param int $saleReference The new saleReference
+     *
+     * @return bool
+     */
+    public function updateSaleReference($saleId, $saleReference)
+    {
+        $saleTable = Database::get_main_table(self::TABLE_SALE);
+
+        return Database::update(
+            $saleTable,
+            ['reference' => $saleReference],
+            ['id = ?' => (int) $saleId]
+        );
+    }
+
+    /**
      * Get sale data by ID.
      *
      * @param int $saleId The sale ID
@@ -1225,6 +1325,25 @@ class BuyCoursesPlugin extends Plugin
             Database::get_main_table(self::TABLE_SALE),
             [
                 'where' => ['id = ?' => (int) $saleId],
+            ],
+            'first'
+        );
+    }
+
+    /**
+     * Get sale data by reference.
+     *
+     * @param string $reference The sale reference
+     *
+     * @return array
+     */
+    public function getSaleFromReference(string $reference)
+    {
+        return Database::select(
+            '*',
+            Database::get_main_table(self::TABLE_SALE),
+            [
+                'where' => ['reference = ?' => $reference],
             ],
             'first'
         );
@@ -1402,17 +1521,49 @@ class BuyCoursesPlugin extends Plugin
 
     /**
      * Get payment types.
-     *
-     * @return array
      */
-    public function getPaymentTypes()
+    public function getPaymentTypes(bool $onlyActive = false): array
     {
-        return [
+        $types = [
             self::PAYMENT_TYPE_PAYPAL => 'PayPal',
             self::PAYMENT_TYPE_TRANSFER => $this->get_lang('BankTransfer'),
             self::PAYMENT_TYPE_CULQI => 'Culqi',
             self::PAYMENT_TYPE_TPV_REDSYS => $this->get_lang('TpvPayment'),
+            self::PAYMENT_TYPE_STRIPE => 'Stripe',
+            self::PAYMENT_TYPE_TPV_CECABANK => $this->get_lang('TpvCecabank'),
         ];
+
+        if (!$onlyActive) {
+            return $types;
+        }
+
+        if ($this->get('paypal_enable') !== 'true') {
+            unset($types[BuyCoursesPlugin::PAYMENT_TYPE_PAYPAL]);
+        }
+
+        if ($this->get('transfer_enable') !== 'true') {
+            unset($types[BuyCoursesPlugin::PAYMENT_TYPE_TRANSFER]);
+        }
+
+        if ($this->get('culqi_enable') !== 'true') {
+            unset($types[BuyCoursesPlugin::PAYMENT_TYPE_CULQI]);
+        }
+
+        if ($this->get('tpv_redsys_enable') !== 'true'
+            || !file_exists(api_get_path(SYS_PLUGIN_PATH).'buycourses/resources/apiRedsys.php')
+        ) {
+            unset($types[BuyCoursesPlugin::PAYMENT_TYPE_TPV_REDSYS]);
+        }
+
+        if ($this->get('stripe_enable') !== 'true') {
+            unset($types[BuyCoursesPlugin::PAYMENT_TYPE_STRIPE]);
+        }
+
+        if ($this->get('cecabank_enable') !== 'true') {
+            unset($types[BuyCoursesPlugin::PAYMENT_TYPE_TPV_CECABANK]);
+        }
+
+        return $types;
     }
 
     /**
@@ -3011,6 +3162,44 @@ class BuyCoursesPlugin extends Plugin
     }
 
     /**
+     * Save Cecabank configuration params.
+     *
+     * @return array
+     */
+    public function saveCecabankParameters($params)
+    {
+        return Database::update(
+            Database::get_main_table(self::TABLE_TPV_CECABANK),
+            [
+                'crypto_key' => $params['crypto_key'],
+                'merchant_id' => $params['merchart_id'],
+                'acquirer_bin' => $params['acquirer_bin'],
+                'terminal_id' => $params['terminal_id'],
+                'cypher' => $params['cypher'],
+                'exponent' => $params['exponent'],
+                'supported_payment' => $params['supported_payment'],
+                'url' => $params['url'],
+            ],
+            ['id = ?' => 1]
+        );
+    }
+
+    /**
+     * Gets the stored Cecabank params.
+     *
+     * @return array
+     */
+    public function getCecabankParams()
+    {
+        return Database::select(
+            '*',
+            Database::get_main_table(self::TABLE_TPV_CECABANK),
+            ['id = ?' => 1],
+            'first'
+        );
+    }
+
+    /**
      * Save Global Parameters.
      *
      * @param array $params
@@ -3438,6 +3627,33 @@ class BuyCoursesPlugin extends Plugin
         );
 
         return $couponCode['code'];
+    }
+
+    /**
+     * @return array
+     */
+    public function getCecabankSignature(string $saleReference, float $price)
+    {
+        $urlOk = api_get_path(WEB_PLUGIN_PATH).'buycourses/src/cecabank_success.php';
+        $urlKo = api_get_path(WEB_PLUGIN_PATH).'buycourses/src/cecabank_cancel.php';
+
+        $cecabankParams = $this->getCecabankParams();
+        $signature = $cecabankParams['crypto_key']
+        .$cecabankParams['merchant_id']
+        .$cecabankParams['acquirer_bin']
+        .$cecabankParams['terminal_id']
+        .$saleReference
+        .$price * 100
+        .'978'
+        .$cecabankParams['exponent']
+        .$cecabankParams['cypher']
+        .$urlOk
+        .$urlKo;
+
+        $sha256 = hash('sha256', $signature);
+        $signature = strtolower($sha256);
+
+        return $signature;
     }
 
     /**

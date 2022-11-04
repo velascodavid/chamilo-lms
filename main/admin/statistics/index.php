@@ -16,6 +16,8 @@ $report = isset($_REQUEST['report']) ? $_REQUEST['report'] : '';
 $sessionDuration = isset($_GET['session_duration']) ? (int) $_GET['session_duration'] : '';
 $validated = false;
 $sessionStatusAllowed = api_get_configuration_value('allow_session_status');
+$invoicingMonth = isset($_GET['invoicing_month']) ? (int) $_GET['invoicing_month'] : '';
+$invoicingYear = isset($_GET['invoicing_year']) ? (int) $_GET['invoicing_year'] : '';
 
 if (
 in_array(
@@ -353,6 +355,7 @@ $tools = [
         'report=zombies' => get_lang('Zombies'),
         'report=users_active' => get_lang('UserStats'),
         'report=users_online' => get_lang('UsersOnline'),
+        'report=invoicing' => get_lang('InvoicingByAccessUrl'),
     ],
     get_lang('System') => [
         'report=activities' => get_lang('ImportantActivities'),
@@ -368,6 +371,10 @@ $tools = [
         'report=session_by_date' => get_lang('SessionsByDate'),
     ],
 ];
+
+if ('true' === api_get_plugin_setting('lti_provider', 'enabled')) {
+    $tools[get_lang('Users')]['report=lti_tool_lp'] = get_lang('LearningPathLTI');
+}
 
 $course_categories = Statistics::getCourseCategories();
 $content = '';
@@ -885,6 +892,19 @@ switch ($report) {
     case 'courselastvisit':
         $content .= Statistics::printCourseLastVisit();
         break;
+    case 'invoicing':
+        if (!empty($invoicingMonth)) {
+            $invoicingMonth = sprintf("%02d", $invoicingMonth);
+            $currentMonth = $invoicingYear.'-'.$invoicingMonth;
+            $lastMonth = date("Y-m", mktime(0, 0, 0, $invoicingMonth, 0, $invoicingYear));
+        } else {
+            $currentMonth = date("Y-m");
+            $lastMonth = date("Y-m", strtotime('-1 month'));
+            $invoicingMonth = date('m');
+            $invoicingYear = date('Y');
+        }
+        $content .= Statistics::printInvoicingByAccessUrl($currentMonth, $lastMonth, $invoicingMonth, $invoicingYear);
+        break;
     case 'users_active':
         $content = '';
         if ($validated) {
@@ -999,7 +1019,7 @@ switch ($report) {
                 //$contract = isset($extraFields['termactivated']) ? $extraFields['termactivated'] : '';
                 $contract = false;
                 $legalAccept = $extraFieldValueUser->get_values_by_handler_and_field_variable($userId, 'legal_accept');
-                if ($legalAccept && isset($legalAccept['value'])) {
+                if ($legalAccept && !empty($legalAccept['value'])) {
                     list($legalId, $legalLanguageId, $legalTime) = explode(':', $legalAccept['value']);
                     if ($legalId) {
                         $contract = true;
@@ -1683,6 +1703,9 @@ switch ($report) {
         break;
     case 'logins_by_date':
         $content .= Statistics::printLoginsByDate();
+        break;
+    case 'lti_tool_lp':
+        $content .= Statistics::printLtiLearningPath();
         break;
 }
 

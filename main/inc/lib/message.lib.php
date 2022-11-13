@@ -534,7 +534,15 @@ class MessageManager
         $checkCurrentAudioId = false,
         $forceTitleWhenSendingEmail = false,
         $status = 0,
-        array $extraParams = []
+        array $extraParams = [],
+        $collaborator_name,
+        $incident_type,
+        $incident_date,
+        $extra_hours,
+        $scheduled_day,
+        $new_day,
+        $person_authorizing
+
     ) {
         $group_id = (int) $group_id;
         $receiverUserId = (int) $receiverUserId;
@@ -688,6 +696,7 @@ class MessageManager
                 Database::query($query);
                 $messageId = $editMessageId;
             } else {
+                //Crreo que aquí
                 $params = [
                     'user_sender_id' => $user_sender_id,
                     'user_receiver_id' => $receiverUserId,
@@ -698,6 +707,14 @@ class MessageManager
                     'group_id' => $group_id,
                     'parent_id' => $parent_id,
                     'update_date' => $now,
+                    'collaborator_name' => $collaborator_name,
+                    'incident_type' => $incident_type,
+                    'incident_date' => $incident_date,
+                    'extra_hours' => $extra_hours,
+                    'scheduled_day' => $scheduled_day,
+                    'new_day' => $new_day,
+                    'person_authorizing' => $person_authorizing,
+
                 ];
                 $messageId = Database::insert($table, $params);
             }
@@ -892,7 +909,18 @@ class MessageManager
             $sender_id,
             $directMessage,
             0,
-            $smsParameters
+            $smsParameters,
+            null,
+            null,
+            null,
+            [],
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
         );
 
         if ($sendCopyToDrhUsers) {
@@ -1569,11 +1597,21 @@ class MessageManager
             }
         }
 
+        $incident_text = '<br>
+            Nombre del colaborador: '.$row["collaborator_name"].' <br>
+            Tipo de incidencia: '.$row["incident_type"].' <br>
+            Fecha de la incidencia: '.$row["incident_date"].' <br>
+            Permisos en tiempo u horas extras: '.$row["extra_hours"].' <br>
+            Día programado para intercambio: '.$row["scheduled_day"].' <br>
+            Día nuevo para intercambio: '.$row["new_day"].' <br>
+            Nombre de quien autoriza: '.$row["person_authorizing"].' <br>
+        <br>';
+
         $message_content .= '
 		        <hr>
 		        <table width="100%">
 		            <tr>
-		              <td valign=top class="view-message-content">'.str_replace("\\", "", $content).'</td>
+		              <td valign=top class="view-message-content">'.$incident_text.str_replace("\\", "", $content).'</td>
 		            </tr>
 		        </table>
 		        <div id="message-attach">'.(!empty($files_attachments) ? implode('<br />', $files_attachments) : '').'</div>
@@ -2839,7 +2877,21 @@ class MessageManager
                 null,
                 null,
                 null,
-                $user->getId()
+                $user->getId(),
+                null,
+                null,
+                [],
+                null,
+                null,
+                null,
+                [],
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
             );
         }
     }
@@ -2918,7 +2970,21 @@ class MessageManager
                     null,
                     null,
                     null,
-                    $userId
+                    $userId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    [],
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
                 );
             }
         }

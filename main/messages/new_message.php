@@ -199,6 +199,15 @@ function manageForm($default, $select_from_user_list = null, $sent_to = '', $tpl
     }
 
     $form->addText('title', get_lang('Subject'), true);
+
+    $form->addText('collaborator_name', 'Nombre del colaborador', true);
+    $form->addRadio('incident_type', 'Tipo de Incidencia', $options = ['Vacaciones' => 'Vacaciones', 'Permiso con goce de sueldo' => 'Permiso con goce de sueldo', 'Permiso sin goce de sueldo' => 'Permiso sin goce de sueldo', 'Retardo' => 'Retardo', 'Falta injustificada' => 'Falta injustificada', 'Incapacidad' => 'Incapacidad', 'Día festivo trabajado' => 'Día festivo trabajado', 'Horas extras' => 'Horas extras', 'Intercambio de programación' => 'Intercambio de programación']);
+    $form->addDatePicker('incident_date', 'Fecha de la incidencia');
+    $form->addText('extra_hours', 'En caso de permisos en tiempo u horas extras favor de indicarlas', false);
+    $form->addDatePicker('scheduled_day', 'En caso de intercambio de programación indica el día programado');
+    $form->addDatePicker('new_day', 'En caso de intercambio de programación indica el día nuevo');
+    $form->addText('person_authorizing', 'Nombre de quién autoriza', true);
+
     $form->addHtmlEditor(
         'content',
         get_lang('Message'),
@@ -309,6 +318,14 @@ function manageForm($default, $select_from_user_list = null, $sent_to = '', $tpl
             $parent_id = isset($default['parent_id']) ? $default['parent_id'] : null;
             $forwardId = isset($_POST['forward_id']) ? $_POST['forward_id'] : false;
 
+            $collaborator_name = $_POST['collaborator_name'];
+            $incident_type = $_POST['incident_type'];
+            $incident_date = $_POST['incident_date'];
+            $extra_hours = $_POST['extra_hours'];
+            $scheduled_day = $_POST['scheduled_day'];
+            $new_day = $_POST['new_day'];
+            $person_authorizing = $_POST['person_authorizing'];
+
             if (is_array($user_list) && count($user_list) > 0) {
                 $extraParams = [];
 
@@ -339,7 +356,14 @@ function manageForm($default, $select_from_user_list = null, $sent_to = '', $tpl
                         true,
                         false,
                         0,
-                        $extraParams
+                        $extraParams,
+                        $collaborator_name,
+                        $incident_type,
+                        $incident_date,
+                        $extra_hours,
+                        $scheduled_day,
+                        $new_day,
+                        $person_authorizing
                     );
 
                     if ($res) {
